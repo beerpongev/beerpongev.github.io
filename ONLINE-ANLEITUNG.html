@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Beerpong Academy – Schritt für Schritt online gehen</title>
+  <style>
+    :root{font-family:"Segoe UI",Arial,sans-serif;color:#011e35;background:#fdf7e7;line-height:1.65}*{box-sizing:border-box}body{margin:0}main{max-width:900px;margin:auto;padding:32px 22px 70px}h1{line-height:1.1;font-size:clamp(2rem,6vw,3.2rem);letter-spacing:-.04em}h2{margin-top:45px;border-bottom:2px solid #cf0214;padding-bottom:9px;line-height:1.25}h3{margin-bottom:5px}a{color:#8b0011;text-underline-offset:3px;overflow-wrap:anywhere}code{background:#eee8d9;border-radius:4px;padding:2px 5px;overflow-wrap:anywhere}pre{background:#011e35;color:#fdf7e7;padding:18px;border-radius:10px;overflow:auto;white-space:pre-wrap;font-size:.85rem}ol{padding-left:26px}li{padding-left:5px;margin-block:15px}li p{margin-block:7px}.note,.success{padding:16px 19px;border-left:4px solid #cf0214;background:#fffdf7;border-radius:0 9px 9px 0;margin-block:22px}.success{border-color:#22755b}table{border-collapse:collapse;width:100%;margin-block:16px;font-size:.93rem}th,td{text-align:left;vertical-align:top;padding:11px;border:1px solid #d6d9cd;overflow-wrap:anywhere}th{background:#ebe9dc}.small{font-size:.85rem;color:#536674}.steps{font-weight:700;letter-spacing:.12em;font-size:.75rem;color:#a40015}nav{display:flex;flex-wrap:wrap;gap:8px 20px;border-block:1px solid #d6d9cd;padding-block:15px}nav a{font-size:.9rem}.checklist li{margin-block:8px}button{background:#011e35;color:#fdf7e7;border:0;border-radius:7px;padding:12px 18px;cursor:pointer;font:inherit}.screen{border:1px solid #d6d9cd;padding:15px;border-radius:9px;background:#fffdf7}@media print{body{background:white;font-size:10pt}main{padding:0;max-width:none}nav,.print-button{display:none}h2{break-after:avoid}li,table,.note{break-inside:avoid}a{color:inherit}pre{background:#f2f2f2;color:#111}.small{color:#444}}
+  </style>
+</head>
+<body><main>
+  <p class="steps">BEERPONG ACADEMY · VERÖFFENTLICHUNG</p>
+  <h1>Von deinem GitHub-Konto zur fertigen Turnier-App.</h1>
+  <p>Du brauchst ein GitHub-Konto, ein Google-Konto für Firebase und Zugriff auf <strong>beerpongacademy@gmail.com</strong>, um den Versand der Mitgliedsanträge freizuschalten. Die Einrichtung erfolgt im Browser. Du brauchst dafür weder Git noch Node.js zu installieren.</p>
+  <div class="note"><strong>Aktueller Stand:</strong> Die Dateien sind vorbereitet; die App ist noch nicht auf deinem GitHub-Konto veröffentlicht. In <code>config.js</code> stehen zunächst Platzhalter. Ohne deine Firebase-Werte zeigt die App eine lokale Demo.</div>
+  <nav aria-label="Anleitung"><a href="#vorbereitung">1. Vorbereitung</a><a href="#firebase">2. Firebase</a><a href="#admin">3. Erstes Konto</a><a href="#github">4. GitHub Pages</a><a href="#turnier">5. Turnier einrichten</a><a href="#antraege">6. Anträge versenden</a><a href="#test">7. Abschlussprüfung</a><a href="#hilfe">Fehlerhilfe</a></nav>
+  <p class="print-button"><button onclick="window.print()">Anleitung drucken / als PDF speichern</button></p>
+
+  <h2 id="vorbereitung">1. Dateien vorbereiten</h2>
+  <ol>
+    <li><strong>Den Ordner <code>TURNIER</code> öffnen.</strong> Darin liegen der vollständige Quellcode und die vorbereitete Auswahl für die Veröffentlichung im Unterordner <strong><code>ONLINE-PAKET</code></strong>. Lade später dessen Inhalt hoch, nicht den gesamten übergeordneten Programmierordner.</li>
+    <li><strong>Optional zuerst lokal ausprobieren.</strong> Öffne <code>STARTEN.cmd</code> im Ordner TURNIER und danach <code>http://127.0.0.1:5173</code> im Browser. Das Startskript kann eine vorhandene VS-Code-Laufzeit nutzen; alternativ funktioniert installiertes Node.js. In der Demo kannst du oben Zuschauer, Mitspieler und Spielleitung wählen. Das sind lokale Beispieldaten, keine echten Konten. Zum Beenden das Konsolenfenster schließen.</li>
+    <li><strong>Dateiendungen sichtbar machen.</strong> Im Windows-Explorer unter <em>Ansicht → Anzeigen → Dateinamenerweiterungen</em> einschalten. Das hilft beim Bearbeiten von <code>config.js</code>: Die Datei darf nicht versehentlich <code>config.js.txt</code> heißen.</li>
+  </ol>
+
+  <h2 id="firebase">2. Dein kostenloses Firebase-Projekt einrichten</h2>
+  <p>GitHub liefert die Webseite aus. Firebase übernimmt Anmeldung, Rechte und Live-Daten. Der kostenlose <strong>Spark-Tarif</strong> benötigt grundsätzlich kein Zahlungsmittel; seine Nutzung hat Grenzen. Aktiviere für diese Anleitung keine kostenpflichtige Abrechnung. <a href="https://firebase.google.com/docs/projects/billing/firebase-pricing-plans" target="_blank" rel="noopener">Offizielle Tarifübersicht</a>.</p>
+  <ol start="4">
+    <li><strong><a href="https://console.firebase.google.com/" target="_blank" rel="noopener">Firebase Console</a> öffnen.</strong> Mit deinem Google-Konto anmelden. Falls du noch keines hast, zunächst ein Google-Konto anlegen. Das Firebase-Konto muss nicht dieselbe Adresse wie das GitHub-Konto verwenden.</li>
+    <li><strong>Ein neues Projekt erstellen.</strong> Wähle einen Namen wie <code>Beerpong Academy Turnier</code> und folge dem Assistenten. Google Analytics wird für diese App nicht benötigt. Falls eine Tarifauswahl erscheint, bei <strong>Spark / kostenlos</strong> bleiben. Ein eigenes Firebase-Projekt und eine Web-App sind Voraussetzung für die Konfiguration. <a href="https://firebase.google.com/docs/web/setup" target="_blank" rel="noopener">Firebase-Web-Einrichtung</a>.</li>
+    <li><strong>Eine Web-App registrieren.</strong> Auf der Projektübersicht das Web-Symbol <strong>&lt;/&gt;</strong> wählen. Einen App-Namen vergeben. Firebase Hosting muss nicht mit eingerichtet werden, weil du GitHub Pages verwendest. Anschließend werden Konfigurationswerte angezeigt.</li>
+    <li><strong>Die Werte in <code>config.js</code> einsetzen.</strong>
+      <p>Im Explorer Rechtsklick auf <code>TURNIER/config.js</code> → <em>Öffnen mit → Editor</em>. Die Werte innerhalb der Anführungszeichen ersetzen:</p>
+      <pre>export const firebaseConfig = {
+  apiKey: "DEIN_WERT_AUS_FIREBASE",
+  authDomain: "DEIN-PROJEKT.firebaseapp.com",
+  projectId: "DEIN-PROJEKT",
+  storageBucket: "DEIN_WERT_AUS_FIREBASE",
+  messagingSenderId: "DEIN_WERT_AUS_FIREBASE",
+  appId: "DEIN_WERT_AUS_FIREBASE"
+};</pre>
+      <p>Die vorhandenen Namen, Kommata und Klammern beibehalten. <code>tournamentId</code> bleibt <code>main</code>, <code>useEmulators</code> bleibt <code>false</code>. Mit Strg+S speichern. Bei Bedarf findest du die Werte wieder über das Zahnrad → <em>Projekteinstellungen → Allgemein → Deine Apps</em>.</p>
+      <p><strong>Wichtig für das vorbereitete Upload-Paket:</strong> Kopiere die gerade gespeicherte <code>config.js</code> anschließend auch nach <code>TURNIER/ONLINE-PAKET/config.js</code> und ersetze dort die Platzhalterdatei.</p>
+      <p class="small">Die Firebase-Web-Konfiguration ist absichtlich öffentlich. Schutz entsteht durch Anmeldung und Datenbankregeln. Niemals Gmail-Passwörter, Service-Account-Dateien oder Admin-SDK-Schlüssel eintragen. <a href="https://firebase.google.com/docs/projects/api-keys" target="_blank" rel="noopener">Offizielle Erklärung zu Firebase-API-Schlüsseln</a>.</p>
+    </li>
+    <li><strong>E-Mail-/Passwort-Anmeldung einschalten.</strong> In Firebase <em>Authentication</em> öffnen; je nach Console-Version liegt der Punkt unter <em>Security</em> oder <em>Build</em>. Auf <em>Get started / Jetzt starten</em> klicken. Unter <em>Sign-in method / Anmeldemethode</em> den Anbieter <strong>E-Mail/Passwort</strong> aktivieren und speichern. Die zusätzliche Anmeldung per E-Mail-Link ist nicht erforderlich. <a href="https://firebase.google.com/docs/auth/web/password-auth" target="_blank" rel="noopener">Anbieter einrichten</a>.</li>
+    <li><strong>Firestore-Datenbank erstellen.</strong> <em>Firestore Database</em> öffnen, gegebenenfalls unter <em>Databases &amp; Storage</em> oder <em>Build</em>. <em>Datenbank erstellen</em> wählen. Nutze <strong>Standard Edition</strong> und die Datenbank-ID <strong><code>(default)</code></strong>. Eine EU-Region wie Frankfurt wählen, sofern verfügbar. Als anfänglichen Regelmodus <strong>Produktionsmodus</strong> wählen. So bleibt der Zugriff zunächst geschlossen. <a href="https://firebase.google.com/docs/firestore/quickstart" target="_blank" rel="noopener">Firestore-Einrichtung</a>.</li>
+    <li><strong>Die mitgelieferten Sicherheitsregeln veröffentlichen.</strong> Lokal <code>TURNIER/firestore.rules</code> im Editor öffnen → Strg+A → Strg+C. In Firebase bei Firestore den Reiter <em>Regeln / Rules</em> öffnen, den vorhandenen Inhalt vollständig ersetzen und auf <strong>Veröffentlichen / Publish</strong> klicken. Eine erfolgreiche Veröffentlichung abwarten. Das Hochladen der Datei zu GitHub allein aktiviert diese Regeln nicht.</li>
+  </ol>
+
+  <h2 id="admin">3. Dein erstes Spielleitungskonto anlegen</h2>
+  <p>Diese einmalige Einrichtung machst du als Besitzer des Firebase-Projekts. Spätere Konten kannst du direkt im Admin-Bereich der App verwalten. Ein neues Authentication-Konto allein hat noch keine Schreibrechte.</p>
+  <ol start="11">
+    <li><strong>In Firebase zu Authentication → Nutzer wechseln.</strong> <em>Nutzer hinzufügen / Add user</em> wählen. Deine gewünschte Anmelde-E-Mail und ein starkes Passwort eintragen und speichern. Kopiere danach die <strong>UID</strong> dieses Kontos. Die UID ist eine technische Kennung; sie ist weder die E-Mail-Adresse noch das Passwort.</li>
+    <li><strong>Das Rollendokument anlegen.</strong> In Firestore zum Reiter <em>Daten / Data</em> gehen. <em>Sammlung starten / Start collection</em> wählen und als Sammlungs-ID exakt <code>roles</code> eintragen. Als <strong>Dokument-ID exakt die kopierte UID</strong> verwenden, nicht „Auto-ID“.</li>
+    <li><strong>Vier Felder als Typ „String“ hinzufügen.</strong> Schreibweise und Groß-/Kleinschreibung genau übernehmen:
+      <table><thead><tr><th>Feldname</th><th>Typ</th><th>Wert</th></tr></thead><tbody>
+        <tr><td><code>role</code></td><td>String</td><td><code>admin</code></td></tr>
+        <tr><td><code>name</code></td><td>String</td><td>Dein Anzeigename</td></tr>
+        <tr><td><code>email</code></td><td>String</td><td>E-Mail des eben angelegten Kontos</td></tr>
+        <tr><td><code>teamId</code></td><td>String</td><td><strong>Leer lassen.</strong> Das Feld anlegen, als Wert aber keine Zeichen eingeben.</td></tr>
+      </tbody></table>
+      <p><strong>Speichern.</strong> Für die Spielleitung muss der Wert technisch <code>admin</code> heißen. <code>Spielleitung</code> ist die sichtbare Bezeichnung in der App. Das leere Feld <code>teamId</code> ist erforderlich; weder weglassen noch <code>null</code>, ein Leerzeichen oder die Buchstaben <code>""</code> als Wert eingeben.</p>
+    </li>
+  </ol>
+
+  <h2 id="github">4. Die Webseite auf GitHub Pages veröffentlichen</h2>
+  <p>Mit GitHub Free verwendest du dafür ein <strong>öffentliches Repository</strong>. Es enthält den App-Code und die freigegebenen Dokumente, keine Passwörter und keine gespeicherten Mitgliedsanträge. <a href="https://docs.github.com/en/pages/getting-started-with-github-pages/creating-a-github-pages-site" target="_blank" rel="noopener">GitHub-Pages-Voraussetzungen</a>.</p>
+  <ol start="14">
+    <li><strong>Bei <a href="https://github.com/" target="_blank" rel="noopener">GitHub</a> anmelden.</strong> Oben rechts auf <strong>+ → New repository</strong> klicken. Einen Repository-Namen wie <code>beerpong-turnier</code> eintragen, <strong>Public</strong> auswählen und <em>Create repository</em> wählen. Ein README kannst du mit anlegen lassen.</li>
+    <li><strong>Die vorbereiteten App-Dateien hochladen.</strong> Im neuen Repository auf <em>Add file → Upload files</em> klicken. Bei einem ganz leeren Repository steht stattdessen häufig <em>uploading an existing file</em>. Im Explorer <code>TURNIER/ONLINE-PAKET</code> öffnen und <strong>dessen Inhalt</strong> in den Upload-Bereich ziehen. Die Unterordner <code>DATEN</code> und <code>content</code> müssen mitkommen; nicht den Ordner ONLINE-PAKET selbst als oberste Ebene hochladen.</li>
+    <li><strong>Vor dem Speichern die Struktur prüfen.</strong> Unter anderem müssen folgende Pfade entstehen:
+      <pre>index.html
+config.js
+app.js
+engine.js
+firebase.js
+transaction.js
+style.css
+responsive.css
+membership.js
+manifest.json
+sw.js
+icon.svg
+.nojekyll
+content/documents.json
+DATEN/Beerpong_Gesamt_Vektor.png
+DATEN/… die bereitgestellten PDF-Dateien …</pre>
+      <p>Die tatsächlich vorbereiteten Dateien vollständig übernehmen, auch weitere Module im Paket. <code>index.html</code> muss direkt auf der obersten Ebene stehen. Gib als Beschreibung z. B. „Turnier-App veröffentlichen“ ein und speichere den Upload über <strong>Commit changes</strong>; falls GitHub einen neuen Branch/Pull Request vorschlägt, die Änderungen anschließend nach <code>main</code> übernehmen. Bei Browser-Uploads gelten maximal 100 Dateien pro Vorgang und 25 MiB je Datei; das Paket ist für diesen Weg vorbereitet. <a href="https://docs.github.com/en/repositories/working-with-files/managing-files/adding-a-file-to-a-repository" target="_blank" rel="noopener">Dateien über den Browser hochladen</a>.</p>
+    </li>
+    <li><strong>Pages einschalten.</strong> Im Repository <em>Settings → Pages</em> öffnen. Im Bereich <em>Build and deployment</em> für <em>Source</em> die Einstellung <strong>Deploy from a branch</strong> wählen. Als Branch <strong>main</strong>, als Ordner <strong>/(root)</strong> auswählen und <strong>Save</strong> klicken. <a href="https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site" target="_blank" rel="noopener">Offizielle Veröffentlichungseinstellungen</a>.</li>
+    <li><strong>Die Veröffentlichung abwarten.</strong> Die Pages-Seite nach einigen Minuten erneut aufrufen. Die dort angezeigte Webadresse öffnen. Für das Beispiel lautet sie ungefähr <code>https://DEIN-GITHUB-NAME.github.io/beerpong-turnier/</code>. Verwende die tatsächlich von GitHub angezeigte Adresse. Unter <em>Actions</em> kannst du den Veröffentlichungsstatus und Fehler sehen.</li>
+    <li><strong>Die App-Domain bei Firebase ergänzen.</strong> In Firebase <em>Authentication → Settings → Authorized domains / Autorisierte Domains</em> öffnen. <code>DEIN-GITHUB-NAME.github.io</code> hinzufügen, ohne <code>https://</code> und ohne <code>/beerpong-turnier/</code>. Für lokale Auth-Tests gegebenenfalls auch <code>localhost</code> und <code>127.0.0.1</code> ergänzen; neuere Firebase-Projekte enthalten localhost nicht automatisch. <a href="https://firebase.google.com/docs/auth/web/email-link-auth" target="_blank" rel="noopener">Hinweis zu autorisierten Domains</a>.</li>
+  </ol>
+
+  <h2 id="turnier">5. Das echte Turnier einrichten</h2>
+  <ol start="20">
+    <li><strong>Die veröffentlichte App öffnen und anmelden.</strong> <em>Anmelden</em> wählen und die E-Mail sowie das Passwort aus Schritt 11 eingeben. Der Reiter <strong>Spielleitung</strong> muss erscheinen. Falls noch kein Turnier existiert, <strong>Turnier anlegen</strong> wählen. Ein gelber Demo-Rollenschalter darf bei eingetragener Live-Konfiguration nicht mehr erscheinen.</li>
+    <li><strong>Teams zuerst anlegen.</strong> Unter <em>Teams</em> oder <em>Spielleitung → Teams verwalten</em> die Teamnamen und jeweils beide Personen erfassen. Teams können zunächst ohne Gruppe bleiben. <em>32 Teamplätze anlegen</em> bereitet bei einem leeren Turnier die Plätze vor; die Personennamen anschließend ergänzen.</li>
+    <li><strong>Danach Gruppen zuweisen.</strong> Unter <em>Teams → 2. Gruppen zuweisen</em> die Teams auf A bis H verteilen. Jede Gruppe benötigt vier Teams. Für einen Tausch zunächst ein Team auf <em>Ohne Gruppe</em> setzen. Alternativ kann die Spielleitung die Gruppen auslosen.</li>
+    <li><strong>Mitspieler-Konten anlegen und zuordnen.</strong> Unter <em>Spielleitung → Benutzer &amp; Teamzuordnung → Konto anlegen</em> Anzeigename, E-Mail und Startpasswort eintragen. Als Rolle <strong>Mitspieler</strong> wählen und das richtige Team auswählen. Mehrere Personen können dasselbe Team haben. Zugangsdaten persönlich weitergeben. Eine Bestätigungs-Mail wird für diesen Login nicht verlangt. Technische Rollenwerte sind <code>admin</code>, <code>player</code> und <code>guest</code>.</li>
+    <li><strong>Tische und Eingaberechte festlegen.</strong> Unter <em>Spielleitung → Tische jetzt einstellen</em> die verfügbare Anzahl eintragen. Der zentrale Schalter <em>Mitspieler dürfen Ergebnisse ihrer eigenen Spiele eintragen und korrigieren</em> erlaubt oder sperrt die Selbsteingabe für alle Teams. Fremde Spiele bleiben für Mitspieler gesperrt. Bei gesperrter Selbsteingabe melden sie das Ergebnis der Spielleitung.</li>
+    <li><strong>Die Gruppenphase starten.</strong> Erst bei 32 vollständigen Teams und acht gefüllten Gruppen <strong>Gruppenphase starten</strong> wählen. Die Tischvergabe läuft fortlaufend. Manuelle Zuweisungen bleiben möglich. Für die Übergänge in die KO-Phasen gibt es konkrete Knöpfe wie <em>Achtelfinale starten</em>. Nach Verlängerung wird unabhängig von den Restbechern mit 1:0 für den Sieger beziehungsweise +1/−1 Differenz gewertet; die Becherauswahl ist dann deaktiviert.</li>
+  </ol>
+
+<h2 id="antraege">6. Geschützte Mitgliedsanträge</h2><p>Keine E-Mail-Einrichtung erforderlich. Zusätzlich zur E-Mail/Passwort-Anmeldung in Firebase Authentication die Methode <strong>Anonym</strong> aktivieren. Aktuelle firestore.rules veröffentlichen. Unter Firestore → Indexe → Einzelnes Feld eine Ausnahme für Sammlung <code>membershipApplications</code>, Feld <code>pdf</code> ohne Indizierung hinzufügen.</p><p>Mitgliedschaft ausfüllen, beide Felder unterschreiben und der geschützten Speicherung zustimmen. Nach der Speicherbestätigung liegt das PDF unter Spielleitung → Mitgliedsanträge → Anträge öffnen bereit. Dort lassen sich alle Anträge als zusammenhängende PDF herunterladen und einzeln löschen. Nur die Spielleitung hat Zugriff. Mit einem erfundenen Testantrag prüfen, bevor echte Anträge eingehen.</p><p>Wechsel auf ein anderes GitHub-/Firebase-Konto: <a href="KONTOWECHSEL.html">vollständige Umzugsanleitung</a>. Die bestehenden Vereinsangaben und Erklärungen vor Freischaltung auf Aktualität prüfen.</p>
+  <h2 id="test">7. Vor dem Turnier auf zwei Geräten prüfen</h2>
+  <ol start="30" class="checklist">
+    <li>Den öffentlichen Link auf einem zweiten Gerät ohne Login öffnen: Spielplan, Gruppen, Regelwerk und Mitgliedschaft müssen lesbar sein; Ergebnisse dürfen nicht veränderbar sein.</li>
+    <li>Als Mitspieler anmelden: Das richtige Team wird als <em>Dein Team</em> hervorgehoben. Bei erlaubter Selbsteingabe lässt sich nur ein eigenes Spiel bearbeiten.</li>
+    <li>Den zentralen Eingabeschalter sperren: Mitspieler können anschließend kein Ergebnis ändern. Die Spielleitung kann weiterhin eintragen.</li>
+    <li>Ein Testergebnis eingeben: Das zweite Gerät muss sich ohne Neuladen aktualisieren. Verlängerung, automatische Tischvergabe und eine vorgemerkte manuelle Tischzuweisung ausprobieren.</li>
+    <li>Vor dem Leeren der Testdaten eine Sicherung herunterladen. <em>Turnier zurücksetzen</em> verlangt zwei Bestätigungen; ein Abbruch darf keine Daten ändern. Das Zurücksetzen erhält Teams, Gruppen und Benutzer.</li>
+    <li>Optional auf Smartphones über das Browser-Menü <em>App installieren / Zum Startbildschirm hinzufügen</em> wählen. Auf iPhone/iPad in Safari über <em>Teilen → Zum Home-Bildschirm</em>. Danach den Link bzw. die installierte App an die Teilnehmer weitergeben.</li>
+  </ol>
+  <div class="success"><strong>Bereit für den Abend:</strong> Die veröffentlichte URL ist erreichbar, Firebase zeigt Live-Verbindung, das Spielleitungskonto funktioniert, Mitspieler sind den richtigen Teams zugeordnet und der E-Mail-Eingang wurde tatsächlich geprüft.</div>
+
+  <h2 id="hilfe">Wenn etwas nicht funktioniert</h2>
+  <table><thead><tr><th>Beobachtung</th><th>Prüfen</th></tr></thead><tbody>
+    <tr><td>Gelber Demo-Banner bleibt sichtbar</td><td>In der tatsächlich hochgeladenen <code>config.js</code> stehen noch Platzhalter. Nicht nur die lokale Datei, sondern auch <code>ONLINE-PAKET/config.js</code> bzw. die GitHub-Datei aktualisieren und committen.</td></tr>
+    <tr><td>Anmeldung geht, aber „Spielleitung“ fehlt</td><td>Stimmt die Rollendokument-ID exakt mit der Authentication-UID überein? Alle vier String-Felder vorhanden? <code>role=admin</code> und <code>teamId</code> als wirklich leerer String? Danach ab- und wieder anmelden.</td></tr>
+    <tr><td>Mitspieler sehen kein eigenes Team oder können nicht eintragen</td><td>Teamzuordnung des Kontos unter Spielleitung kontrollieren, zentrale Selbsteingabe prüfen und ein Spiel des richtigen Teams in der aktuellen Phase wählen.</td></tr>
+    <tr><td>„Keine Berechtigung“</td><td>Die aktuellen Regeln aus <code>firestore.rules</code> müssen in Firebase veröffentlicht sein. Der Upload zu GitHub reicht nicht. Keine alten Regeln verwenden, die noch eine andere Rolle oder ein anderes Datenformat erwarten.</td></tr>
+    <tr><td>GitHub zeigt 404 oder keine App</td><td>Liegt <code>index.html</code> direkt im Repository-Stamm? Pages auf <code>main</code> und <code>/(root)</code>? Veröffentlichung unter Actions erfolgreich? Genau die von Pages angezeigte URL verwenden.</td></tr>
+    <tr><td>Logo, Regeln oder Satzung fehlen</td><td>Unterordner <code>DATEN</code> und <code>content</code> vollständig hochgeladen? Dateinamen, Umlaute und Groß-/Kleinschreibung unverändert? Nicht versehentlich eine zusätzliche Ordner-Ebene eingefügt?</td></tr>
+    <tr><td>Nach einem Update erscheint die alte Oberfläche</td><td>Alle App-Tabs und installierten App-Fenster schließen, erneut öffnen und gegebenenfalls hart neu laden. Der Offline-Cache kann eine bisher geladene Version vorhalten. Bei hartnäckigen Fällen Website-Daten dieses Hosts im Browser löschen und neu anmelden; der Live-Turnierstand bleibt in Firebase.</td></tr>
+    <tr><td>Antrag wird nicht gespeichert</td><td>Anonyme Anmeldung aktiviert? Neue Firestore-Regeln veröffentlicht? Internet vorhanden? Speicherbestätigung abwarten und Eingang als Spielleitung prüfen.</td></tr>
+    <tr><td>Firebase-Verbindung unterbrochen</td><td>Internet, Projektwerte und Firestore-Regeln prüfen. Offline sind gespeicherte Ansichten gegebenenfalls lesbar; Änderungen brauchen eine bestätigte Live-Verbindung.</td></tr>
+  </tbody></table>
+  <p class="small">Nutzung beobachten: Firestore hat kostenlose Kontingente, beispielsweise 50.000 Dokumentlesevorgänge und 20.000 Schreibvorgänge pro Tag. Das Dashboard zeigt den Verbrauch. <a href="https://firebase.google.com/docs/firestore/quotas" target="_blank" rel="noopener">Aktuelle Nutzungsgrenzen</a>. Stand dieser Anleitung: 12.11.2026. Bezeichnungen in den Anbieteroberflächen können sich ändern.</p>
+</main></body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "buildCommand": null,
+  "installCommand": "node -e \"console.log('Static app: no install required')\"",
+  "outputDirectory": ".",
+  "headers": [
+    { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "/config.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "/(.*)", "headers": [
+      { "key": "X-Content-Type-Options", "value": "nosniff" },
+      { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+    ] }
+  ]
+}

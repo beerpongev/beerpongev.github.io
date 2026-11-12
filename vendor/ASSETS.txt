@@ -1,0 +1,73 @@
+Vendored PDF generation assets
+Retrieved 2026-11-12. These files are served locally by the static app.
+No npm installation, runtime CDN requests or build step is needed.
+
+pdf-lib 1.17.1 (MIT)
+Official project: https://github.com/Hopding/pdf-lib
+Browser ESM: https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.esm.min.js
+License: https://unpkg.com/pdf-lib@1.17.1/LICENSE.md
+Local import: ./vendor/pdf-lib.esm.min.js (named PDFDocument, rgb, etc.)
+Unmodified official browser ESM bundle.
+
+@pdf-lib/fontkit 1.1.1 (MIT)
+Official project: https://github.com/Hopding/fontkit
+Browser ESM: https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.es.min.js
+Upstream fontkit license (the fork/npm package declares MIT but omits LICENSE):
+https://raw.githubusercontent.com/foliojs/fontkit/d65a577ea30bfce9ce84dc8045860b2abbc1968b/LICENSE
+Local import: ./vendor/fontkit.es.min.js (default fontkit)
+Adaptation: the first bare import from "pako" was changed to "./pako.esm.js".
+All remaining source is unchanged. This makes browser ES-module loading work
+without an import map or build system.
+Original download SHA256:
+911B7B69F220BAFF71BF123A15B16A8153ED46E68EEEDFC224226D4C4EC967E7
+
+pako 1.0.11 (MIT, bundled zlib portions under the zlib license)
+Official project: https://github.com/nodeca/pako
+Compatible with fontkit's declared pako ^1.0.6 dependency.
+Source: https://unpkg.com/pako@1.0.11/dist/pako.min.js
+License: https://unpkg.com/pako@1.0.11/LICENSE
+Additional zlib notice: https://unpkg.com/pako@1.0.11/lib/zlib/README
+Local module: ./vendor/pako.esm.js
+Adaptation: the unmodified UMD source is enclosed by module/exports variables
+and followed by `export default module.exports;`. No global pako is created.
+Original download SHA256:
+29CFA0542B9864B6640CFDCC8F15B184DB6431B532DB2702A3CE97E5F2A7FC1C
+
+Noto Sans Regular/Bold 2.008 (SIL Open Font License 1.1)
+Official project: https://github.com/notofonts/noto-fonts
+Pinned repository revision: ffebf8c1ee449e544955a7e813c54f9b73848eac
+Unmodified hinted static TTFs:
+https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSans/NotoSans-Regular.ttf
+https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSans/NotoSans-Bold.ttf
+License:
+https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/LICENSE
+Local fonts: ./vendor/fonts/NotoSans-Regular.ttf and NotoSans-Bold.ttf
+
+Usage/API verified against official documentation:
+https://pdf-lib.js.org/docs/api/classes/pdfdocument#registerfontkit
+https://github.com/Hopding/pdf-lib#embed-font-and-measure-text
+
+import { PDFDocument } from './vendor/pdf-lib.esm.min.js';
+import fontkit from './vendor/fontkit.es.min.js';
+const pdf = await PDFDocument.create();
+pdf.registerFontkit(fontkit);
+const bytes = await fetch('./vendor/fonts/NotoSans-Regular.ttf')
+  .then(response => response.arrayBuffer());
+const font = await pdf.embedFont(bytes, { subset: true });
+
+Verification: imported the local ESM modules, embedded both fonts with
+subsetting, drew German/French/Polish/Czech text and EUR sign, and saved
+a valid PDF 1.7 document. Noto Sans supports European name characters;
+it is not an all-Unicode font (for example emoji need another font).
+
+SHA256 of distributed files (this manifest excluded):
+E368B207CDFE4FF2FDDCC06AB550B82CC0B28C28A0FC4BDD033F7FA17ED22965  fontkit.es.min.js
+C976E4B1B99EDC88775377FCC21692CA4BFA46B6D6CA6522BFDA505B28FF9D6A  fonts/NotoSans-Bold.ttf
+B85C38ECEA8A7CFB39C24E395A4007474FA5A4FC864F6EE33309EB4948D232D5  fonts/NotoSans-Regular.ttf
+CF22B8198F0886A8D4626121579114F23141070E1FCEAB02AB3C1C361E163440  licenses/fontkit-LICENSE.txt
+0DAB92D0544F7B233403F14B84A663BDBFA746982EDA629E7F4F9FFE1B036FEB  licenses/NotoSans-OFL.txt
+A04665B3B2DE56C66730C1F720F528175739E4104F79073614AA611DA1E85539  licenses/pako-LICENSE.txt
+D8B499598E43D755EA8918448128259FF01820C50D94D5A48C8883D0A594DDB1  licenses/pako-zlib-README.txt
+F2C9FC00FDB66EB99AC156BA52D734AF66D8D309F65753AE809AD34EE2883BCB  licenses/pdf-lib-LICENSE.md
+0E05FD3C9A7756F475FB30CEE36C7225D4D3BD25D4EB83921EF911D4061F2D06  pako.esm.js
+72C052D97B4D5D9FA6CDBDCB7AD709F03D4DDB1122390CB3AFEBA4D88651D969  pdf-lib.esm.min.js

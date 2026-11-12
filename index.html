@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#011e35">
+  <meta name="description" content="Beerpong – der Live-Turnierplaner der Beerpong Academy. Spiele, Gruppen und der Weg ins Finale.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="icons/academy-32.png">
+  <link rel="apple-touch-icon" href="icons/academy-192.png">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="responsive.css">
+  <title>BEERPONG · Beerpong Academy</title>
+</head>
+<body>
+  <a class="skip" href="#main">Zum Inhalt</a>
+  <header class="masthead">
+    <div class="topbar wrap">
+      <a class="brand" href="./" aria-label="Beerpong Startseite"><img src="DATEN/Beerpong_Gesamt_Vektor.png" alt="Beerpong Academy e. V." width="64" height="64"></a>
+      <div class="account"><span id="connection" class="connection" role="status">Wird geladen …</span><button class="button ghost" id="login-button" data-action="login">Anmelden ↗</button></div>
+    </div>
+    <div class="compact-status wrap"><span id="phase-badge">Turnierplaner</span><span id="event-title" hidden>BEERPONG</span></div>
+  </header>
+  <div id="mode-banner" class="mode-banner" hidden></div>
+  <nav class="tabs" aria-label="Turnierbereiche"><div class="wrap" id="navigation">
+    <button data-view="overview" aria-current="page">Übersicht</button><button data-view="groups">Gruppen</button><button data-view="bracket">KO-Baum</button><button data-view="teams">Teams</button><button data-view="rules">Regelwerk</button><button data-view="membership">Mitgliedschaft</button><button data-view="admin" id="admin-tab" hidden>Spielleitung</button>
+  </div></nav>
+  <main id="main" class="wrap" tabindex="-1"><div class="empty"><p class="eyebrow">GLEICH GEHT’S LOS</p><h2>Der Turnierplan wird geladen.</h2></div></main>
+  <footer class="wrap footer"><span>BEERPONG ACADEMY e. V. <b>★</b> BEERPONG</span><div><button data-action="rules" class="text-button">So wird gewertet</button><button data-action="install" class="text-button">App installieren</button></div></footer>
+  <dialog id="dialog" aria-labelledby="dialog-title"><div id="dialog-body"></div></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <noscript>Bitte JavaScript aktivieren, um Spielpläne und Live-Ergebnisse zu sehen.</noscript>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
