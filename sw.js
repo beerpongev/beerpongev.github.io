@@ -1,5 +1,5 @@
 // Nur App-Dateien und SDK-Module cachen, niemals Auth-/Firestore-HTTP-Antworten.
-const VERSION = 'beerpong-v3-private-pdf-20261112';
+const VERSION = 'beerpong-v3-rules-beer-aligned-20261112';
 const LOCAL = ["./membership-pdf.js","./icons/academy-32.png","./icons/academy-192.png","./icons/academy-512.png","./vendor/fontkit.es.min.js","./vendor/fonts/NotoSans-Bold.ttf","./vendor/fonts/NotoSans-Regular.ttf","./vendor/pako.esm.js","./vendor/pdf-lib.esm.min.js",'./','./index.html','./style.css','./responsive.css','./app.js','./engine.js','./scheduler.js','./firebase.js','./transaction.js','./config.js','./ui.js','./data.js','./documents.js','./membership.js','./content/documents.json','./manifest.json','./icon.svg','./icons/icon-192.png','./icons/icon-512.png','./DATEN/Beerpong_Gesamt_Vektor.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(VERSION).then(cache => cache.addAll(LOCAL)));
