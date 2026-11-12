@@ -45,7 +45,7 @@ function render(force=false){
   document.querySelectorAll('[data-view]').forEach(b=>{if(b.dataset.view===view)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
   const phase=state?E.LABELS[state.phase]:'';
   $('#phase-badge').textContent=phase??'';
-  $('#phase-badge').parentElement.hidden=!phase;
+  $('#phase-badge').hidden=!phase;
   $('#mode-banner').hidden=!demo&&synced&&navigator.onLine;
   $('#mode-banner').innerHTML=demo?`DEMO · Beispieldaten nur in diesem Browser. <label>Ansicht testen <select id="demo-role"><option value="guest" ${role==='guest'?'selected':''}>Zuschauer</option><option value="player" ${role==='player'?'selected':''}>Mitspieler</option><option value="admin" ${admin()?'selected':''}>Spielleitung</option></select></label>${role==='player'&&state?`<label>Dein Team <select id="demo-team">${state.teams.map(t=>`<option value="${e(t.id)}" ${teamId===t.id?'selected':''}>${e(t.name)}</option>`).join('')}</select></label>`:''}`:'Verbindung wird hergestellt oder ist unterbrochen. Der Stand kann veraltet sein; Änderungen sind gesperrt.';
   // Live-Updates dürfen keine Unterschriften oder ungesendeten Antragsdaten löschen.
