@@ -42,7 +42,7 @@ export function validateBackup(parsed) {
     if(ev.type==='plan'&&(!Number.isFinite(ev.when)||typeof ev.id!=='string'))throw new Error('Ungültiger Tischzeitplan.');
     if(ev.type==='phase'&&(!E.PHASES.includes(ev.phase)||!Number.isInteger(ev.tables)||ev.tables<0||ev.tables>32))throw new Error('Ungültiger Phasenstart.');
     if(ev.type==='assign'&&(!Number.isInteger(ev.table)||ev.table<0||ev.table>32))throw new Error('Ungültige Tischzuweisung.');
-    if(ev.type==='status'&&(!Number.isInteger(ev.table)||ev.table<1||ev.table>32||!['free','preparing'].includes(ev.status)))throw new Error('Ungültiger Tischstatus.');
+    if(ev.type==='status'&&(!Number.isInteger(ev.table)||ev.table<1||ev.table>32||!['free','open','preparing'].includes(ev.status)))throw new Error('Ungültiger Tischstatus.');
   }
   if(Object.keys(s.results).some(id=>!s.dispatchEvents.some(ev=>ev.type==='score'&&ev.id===id)))throw new Error('Die Sicherung enthält unvollständige Tischereignisse.');
   if(s.phase==='complete'&&(!s.results['final-1']||!s.results['bronze-1']))throw new Error('Finalergebnisse fehlen.');

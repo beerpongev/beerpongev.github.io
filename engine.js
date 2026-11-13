@@ -77,6 +77,8 @@ export function validateResult(result) {
 }
 export function winnerId(match, result) { return result ? match[result.winner] : null; }
 export function loserId(match, result) { return result ? match[result.winner === "a" ? "b" : "a"] : null; }
+export const cupMargin=result=>result.overtime?1:result.cups;
+export const remainingCups=(result,side)=>result.winner===side?0:cupMargin(result);
 
 /** Punkte, dann Differenz, dann direkter Vergleich (bei >2: Mini-Tabelle). */
 export function standings(state, group) {
@@ -88,7 +90,7 @@ export function standings(state, group) {
     if (!w || !l) continue;
     w.played++; l.played++; w.won++; l.lost++; w.points += 3;
     // Gezählt werden die übrigen Becher des Verlierers: Sieger +n, Verlierer −n.
-    w.plus += r.cups; l.minus += r.cups;
+    const cups=cupMargin(r);w.plus += cups; l.minus += cups;
   }
   rows.forEach(t => { t.diff = t.plus - t.minus; });
   const buckets = new Map();
@@ -104,7 +106,7 @@ export function standings(state, group) {
       const r = state.results[m.id];
       if (!r || !ids.includes(m.a) || !ids.includes(m.b)) continue;
       const w = peers.find(t => t.id === winnerId(m,r)), l = peers.find(t => t.id === loserId(m,r));
-      w.hPoints += 3; w.hDiff += r.cups; l.hDiff -= r.cups;
+      const cups=cupMargin(r);w.hPoints += 3; w.hDiff += cups; l.hDiff -= cups;
     }
   }
   for (const t of rows) t.tieKey = `${t.points}/${t.diff}/${t.hPoints}/${t.hDiff}`;
@@ -189,28 +191,51 @@ export function releaseMatch(state,id) {
   assert(state.matches[id]&&state.matches[id].phase===state.phase&&!state.results[id],'Nur offene Spiele können freigegeben werden.');
   const s=clone(state);addEvent(s,{type:'release',id});return s;
 }
+/** Unzugewiesene Partien für eine manuelle Tischwarteschlange vorschlagen.
+ * Freie Teams zuerst, danach Spielplanreihenfolge. Gebundene Teams dürfen
+ * vorgemerkt werden, bleiben beim Nachrücken aber durch dispatch gesperrt.
+ */
+export function tableCandidates(state){
+  const matches=phaseMatches(state),busy=new Set(matches.filter(m=>['open','preparing','playing'].includes(m.status)&&!state.results[m.id]).flatMap(m=>[m.a,m.b]));
+  return matches.filter(m=>!state.results[m.id]&&!m.table&&!m.held).map(m=>({...m,teamsReady:!busy.has(m.a)&&!busy.has(m.b)})).sort((a,b)=>Number(b.teamsReady)-Number(a.teamsReady)||a.order-b.order);
+}
+export function queueAtTable(state,table,ids){
+  assert(Number.isInteger(table)&&table>=1&&table<=activeTables(state),'Dieser Tisch ist nicht mehr bespielbar.');
+  assert(Array.isArray(ids)&&new Set(ids).size===ids.length,'Partien dürfen nicht doppelt vorgemerkt werden.');
+  const available=new Set(tableCandidates(state).map(m=>m.id));
+  assert(ids.every(id=>available.has(id)),'Eine ausgewählte Partie ist inzwischen zugewiesen, beendet oder zurückgestellt. Bitte die Tischverwaltung neu öffnen.');
+  let next=state;for(const id of ids)next=assignTable(next,id,table);return next;
+}
 export function tableQueue(state, table) {
   return phaseMatches(state).filter(m => m.table === table && !state.results[m.id]).sort((a,b) => a.queue - b.queue);
 }
-export function activeAtTable(state, table) { return tableQueue(state,table).find(m => m.status === "playing"); }
-export function tableStatus(state, table) { return activeAtTable(state,table) ? table>activeTables(state)?"draining":"playing" : table>activeTables(state)?"disabled":dispatch(state).statuses[table] || "free"; }
+export function teamTableInfo(state,teamId){
+  if(!state||!teamId)return{current:null,upcoming:[]};
+  const own=phaseMatches(state).filter(m=>!state.results[m.id]&&m.table&&[m.a,m.b].includes(teamId));
+  const current=own.find(m=>['open','preparing','playing'].includes(m.status))??null;
+  const upcoming=own.filter(m=>m.status==='queued').map(m=>({...m,position:tableQueue(state,m.table).filter(g=>g.status==='queued').findIndex(g=>g.id===m.id)+1})).sort((a,b)=>a.position-b.position||a.queue-b.queue);
+  return{current,upcoming};
+}
+export function activeAtTable(state, table) { return tableQueue(state,table).find(m => ['open','preparing','playing'].includes(m.status)); }
+export function tableStatus(state, table) { const active=activeAtTable(state,table);return active ? table>activeTables(state)?'draining':active.status : table>activeTables(state)?'disabled':'free'; }
 export function startMatch(state, id) {
   const s = clone(state), m = match(state,id);
   assert(m && m.phase === s.phase && !s.results[id] && m.table, "Zuerst einen Tisch für das offene Spiel zuweisen.");
   assert(m.table<=activeTables(state),'Dieser Tisch ist nicht mehr bespielbar. Bitte das Spiel umsetzen.');
-  const active = phaseMatches(s).filter(x => !s.results[x.id] && x.status === "playing" && x.id !== id);
-  assert(!active.some(x => x.table === m.table), "An diesem Tisch läuft bereits ein Spiel. Zuerst beenden oder auf Vorbereitung stellen.");
+  const active = phaseMatches(s).filter(x => !s.results[x.id] && ['open','preparing','playing'].includes(x.status) && x.id !== id);
+  assert(!active.some(x => x.table === m.table), "An diesem Tisch ist bereits ein Spiel an der Reihe. Zuerst beenden oder umsetzen.");
   assert(!active.some(x => [x.a,x.b].some(t => t === m.a || t === m.b)), "Ein Team spielt bereits an einem anderen Tisch.");
   addEvent(s,{type:'start',id}); return s;
 }
 export function setTableStatus(state, table, status) {
   assert(Number.isInteger(table) && table >= 1 && table <= state.tableCount, "Ungültige Tischnummer.");
-  assert(["free","preparing","playing"].includes(status), "Ungültiger Tischstatus.");
+  assert(["free","open","preparing","playing"].includes(status), "Ungültiger Tischstatus.");
   if (status === "playing") {
     const m = activeAtTable(state,table) || tableQueue(state,table)[0];
     assert(m, "Zuerst ein Spiel diesem Tisch zuweisen.");
     return startMatch(state,m.id);
   }
+  if(status==='preparing'||status==='open')assert(activeAtTable(state,table),'Zuerst ein Spiel diesem Tisch zuweisen.');
   const s = clone(state);
   addEvent(s,{type:'status',table,status}); return s;
 }

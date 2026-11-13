@@ -13,26 +13,27 @@ export function dispatch(state) {
   let phase = 'setup', count = state.activeTableCount ?? state.tableCount, sequence = 0;
   const plans=[];
   const current = () => Object.values(matches).filter(m => m.phase === phase && !finished.has(m.id));
-  const active = () => current().filter(m => m.status === 'playing');
+  // Eine zugewiesene Partie reserviert Tisch UND Teams schon vor dem Anpfiff.
+  const active = () => current().filter(m => ['open','preparing','playing'].includes(m.status));
   const eligible = m => !active().some(a => [a.a,a.b].some(t => t === m.a || t === m.b));
   function fill() {
     if (phase === 'setup' || phase === 'complete') return;
-    const free = () => Array.from({length:count},(_,i)=>i+1).filter(t => statuses[t] !== 'preparing' && !active().some(m=>m.table===t));
+    const free = () => Array.from({length:count},(_,i)=>i+1).filter(t => !active().some(m=>m.table===t));
     // Explizite Vormerkungen haben Vorrang vor noch nicht zugewiesenen Spielen.
     for (const table of free()) {
       const m = current().filter(m => m.table===table && m.status==='queued' && eligible(m)).sort((a,b)=>a.queue-b.queue)[0];
-      if (m) m.status='playing';
+      if (m) m.status='open';
     }
     for (const table of free()) {
       const m = current().filter(m => !m.table && !m.held && eligible(m)).sort((a,b)=>a.order-b.order)[0];
-      if (m) { m.table=table; m.status='playing'; m.queue=++sequence; }
+      if (m) { m.table=table; m.status='open'; m.queue=++sequence; }
     }
   }
   function resize(next) {
     count=next;
     // Laufende Spiele dürfen auslaufen. Vormerkungen entfallender Tische gehen
     // zurück in die automatische Vergabe an weiterhin bespielbaren Tischen.
-    for(const m of current())if(m.table>count && m.status!=='playing'){m.table=0;m.held=false;}
+    for(const m of current())if(m.table>count && m.status!=='playing'){m.table=0;m.status='queued';m.held=false;}
     fill();
   }
   function timers(now) {
@@ -49,7 +50,7 @@ export function dispatch(state) {
     } else if (event.type === 'tables') resize(event.count);
     else if (event.type === 'plan') plans.push({id:event.id,when:event.when,count:event.count,status:'pending',sequence:sequence++});
     else if (event.type === 'cancel-plan') {const p=plans.find(p=>p.id===event.id&&p.status==='pending');if(p)p.status='cancelled';}
-    else if (event.type === 'score' && m) { finished.add(m.id); m.status='finished'; }
+    else if (event.type === 'score' && m) { finished.add(m.id); m.status='finished'; statuses[m.table]='free'; }
     else if (event.type === 'assign' && m && !finished.has(m.id)) {
       m.table=event.table; m.status='queued'; m.queue=++sequence; m.held=!event.table;
     } else if (event.type === 'release' && m && !finished.has(m.id)) {
@@ -58,7 +59,7 @@ export function dispatch(state) {
       m.status='playing'; statuses[m.table]='free';
     } else if (event.type === 'status') {
       statuses[event.table]=event.status;
-      for (const game of active()) if (game.table===event.table) game.status='queued';
+      for (const game of active()) if (game.table===event.table) game.status=event.status==='preparing'?'preparing':'open';
     }
     fill();
   }
