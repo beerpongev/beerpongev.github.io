@@ -5,6 +5,12 @@ export const configured = firebaseConfig.apiKey !== 'HIER_EINTRAGEN' && firebase
 export const liveCacheKey = `beerpong-live-${firebaseConfig.projectId}`;
 let api, authApi, apps, db, auth, secondary, ref,demoGateOnly=false;
 function liveOnly(){if(demoGateOnly)throw new Error('Echte Daten und Kontovorgänge sind in der Online-Demo gesperrt.');}
+async function requireBoardAccount(){
+  liveOnly();
+  if(!auth?.currentUser?.uid)throw new Error('Die Benutzerverwaltung ist dem Vorstand vorbehalten.');
+  const own=await api.getDoc(api.doc(db,'roles',auth.currentUser.uid));
+  if(own.data()?.role!=='board')throw new Error('Die Benutzerverwaltung ist dem Vorstand vorbehalten.');
+}
 
 /** Die Online-Demo verwendet Firebase nur für Anmeldung und Prüfung der eigenen Rolle. */
 export async function connect({ onState, onUser, onRole, onUsers, onConnection, onError, demoGate=false }) {
@@ -38,7 +44,7 @@ export async function connect({ onState, onUser, onRole, onUsers, onConnection, 
     stopRole = api.onSnapshot(api.doc(db, 'roles', user.uid), snap => {
       const role = snap.data()?.role ?? 'guest';
       onRole(role,snap.data()?.teamId??''); stopUsers();onUsers([]);
-      if (!demoGate&&['admin','board'].includes(role)) stopUsers = api.onSnapshot(api.collection(db, 'roles'), list => onUsers(list.docs.map(d => ({ uid: d.id, ...d.data() }))), onError);
+      if (!demoGate&&role==='board') stopUsers = api.onSnapshot(api.collection(db, 'roles'), list => onUsers(list.docs.map(d => ({ uid: d.id, ...d.data() }))), onError);
     }, onError);
   });
 }
@@ -77,12 +83,13 @@ export async function mutate(transform, expectedRevision, { id, baseline, match 
   return runStateTransaction(api, db, ref, auth.currentUser.uid, transform, expectedRevision, { id, baseline, match });
 }
 
-/** Zweite Auth-Instanz: das Admin-Konto bleibt beim Anlegen angemeldet.
+/** Zweite Auth-Instanz: das Vorstandskonto bleibt beim Anlegen angemeldet.
  * Kontenerstellung in Auth ist öffentlich erreichbar; Rechte gibt es nur über /roles.
  * Auth und Firestore haben keine gemeinsame Transaktion: bei Fehler zurückrollen.
  */
 export async function createAccount({ email, name, role, teamId = '' }) {
   liveOnly();
+  await requireBoardAccount();
   const secondaryAuth = authApi.getAuth(secondary);
   // Dieses zufällige Geheimnis wird weder angezeigt noch gespeichert oder verschickt.
   // Der Empfänger erhält ausschließlich den Firebase-Link zum eigenen Passwort.
@@ -102,10 +109,11 @@ export async function createAccount({ email, name, role, teamId = '' }) {
     throw error;
   } finally { await authApi.signOut(secondaryAuth); }
 }
-export const inviteAccount=email=>{liveOnly();return authApi.sendPasswordResetEmail(auth,email.trim(),{url:new URL('./',location.href).href});};
+export const inviteAccount=email=>{liveOnly();return requireBoardAccount().then(()=>authApi.sendPasswordResetEmail(auth,email.trim(),{url:new URL('./',location.href).href}));};
 
 export async function setRole(uid, data) {
   liveOnly();
+  await requireBoardAccount();
   if(uid.trim()===auth.currentUser.uid){const own=await api.getDoc(api.doc(db,'roles',uid.trim()));if(data.role!==own.data()?.role)throw new Error('Die eigene Leitungsrolle kann hier nicht geändert werden.');}
   await api.setDoc(api.doc(db, 'roles', uid.trim()), { name: data.name.trim(), email: data.email.trim(), role: data.role,teamId:data.role==='player'?data.teamId:'' });
 }
