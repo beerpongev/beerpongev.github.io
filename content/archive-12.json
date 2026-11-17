@@ -1,0 +1,1207 @@
+{
+  "id": "official-12-2023",
+  "sourceUrl": "https://www.meinspielplan.de/plan/BJz9T1",
+  "checkedOn": "2026-11-17",
+  "teamCount": 32,
+  "totalMatches": 64,
+  "placements": [
+    {
+      "position": 1,
+      "name": "Maschine + Ersatzteil"
+    },
+    {
+      "position": 2,
+      "name": "Kurz & Lang"
+    },
+    {
+      "position": 3,
+      "name": "TSV Stelle Darts"
+    },
+    {
+      "position": 4,
+      "name": "Die siamesischen Bierlinge"
+    }
+  ],
+  "groups": [
+    {
+      "letter": "A",
+      "teams": [
+        {
+          "position": 1,
+          "name": "294ers",
+          "played": 3,
+          "won": 3,
+          "drawn": 0,
+          "lost": 0,
+          "score": [
+            4,
+            0
+          ],
+          "diff": 4,
+          "points": 9
+        },
+        {
+          "position": 2,
+          "name": "FC Schwips",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            5,
+            1
+          ],
+          "diff": 4,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "Fix & Fertig",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            2,
+            4
+          ],
+          "diff": -2,
+          "points": 3
+        },
+        {
+          "position": 4,
+          "name": "Dick & Dicht²",
+          "played": 3,
+          "won": 0,
+          "drawn": 0,
+          "lost": 3,
+          "score": [
+            0,
+            6
+          ],
+          "diff": -6,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "letter": "B",
+      "teams": [
+        {
+          "position": 1,
+          "name": "Maschine + Ersatzteil",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            7,
+            1
+          ],
+          "diff": 6,
+          "points": 6
+        },
+        {
+          "position": 2,
+          "name": "Mirlachs",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            4,
+            2
+          ],
+          "diff": 2,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "Balls & Tits",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            1,
+            2
+          ],
+          "diff": -1,
+          "points": 3
+        },
+        {
+          "position": 4,
+          "name": "Für Rum und Ehre",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            1,
+            8
+          ],
+          "diff": -7,
+          "points": 3
+        }
+      ]
+    },
+    {
+      "letter": "C",
+      "teams": [
+        {
+          "position": 1,
+          "name": "Leber Sport",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            4,
+            1
+          ],
+          "diff": 3,
+          "points": 6
+        },
+        {
+          "position": 2,
+          "name": "Kapuziner's",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            3,
+            1
+          ],
+          "diff": 2,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "Leerer Trichter",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            2,
+            4
+          ],
+          "diff": -2,
+          "points": 3
+        },
+        {
+          "position": 4,
+          "name": "One Hit Wonder",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            1,
+            4
+          ],
+          "diff": -3,
+          "points": 3
+        }
+      ]
+    },
+    {
+      "letter": "D",
+      "teams": [
+        {
+          "position": 1,
+          "name": "Designated Drinkers",
+          "played": 3,
+          "won": 3,
+          "drawn": 0,
+          "lost": 0,
+          "score": [
+            11,
+            0
+          ],
+          "diff": 11,
+          "points": 9
+        },
+        {
+          "position": 2,
+          "name": "Die siamesischen Bierlinge",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            3,
+            6
+          ],
+          "diff": -3,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "PingPong Pinguins",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            2,
+            2
+          ],
+          "diff": 0,
+          "points": 3
+        },
+        {
+          "position": 4,
+          "name": "Die Bierkönige",
+          "played": 3,
+          "won": 0,
+          "drawn": 0,
+          "lost": 3,
+          "score": [
+            0,
+            8
+          ],
+          "diff": -8,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "letter": "E",
+      "teams": [
+        {
+          "position": 1,
+          "name": "Kurz & Lang",
+          "played": 3,
+          "won": 3,
+          "drawn": 0,
+          "lost": 0,
+          "score": [
+            6,
+            0
+          ],
+          "diff": 6,
+          "points": 9
+        },
+        {
+          "position": 2,
+          "name": "MTV Hoopte Darts",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            8,
+            1
+          ],
+          "diff": 7,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "uR",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            2,
+            4
+          ],
+          "diff": -2,
+          "points": 3
+        },
+        {
+          "position": 4,
+          "name": "Beers Anatomy",
+          "played": 3,
+          "won": 0,
+          "drawn": 0,
+          "lost": 3,
+          "score": [
+            0,
+            11
+          ],
+          "diff": -11,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "letter": "F",
+      "teams": [
+        {
+          "position": 1,
+          "name": "2 vs. Alk",
+          "played": 3,
+          "won": 3,
+          "drawn": 0,
+          "lost": 0,
+          "score": [
+            10,
+            0
+          ],
+          "diff": 10,
+          "points": 9
+        },
+        {
+          "position": 2,
+          "name": "Team Bardowicks",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            7,
+            3
+          ],
+          "diff": 4,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "Ei und Speck",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            2,
+            8
+          ],
+          "diff": -6,
+          "points": 3
+        },
+        {
+          "position": 4,
+          "name": "Die Aperoli Schwestern",
+          "played": 3,
+          "won": 0,
+          "drawn": 0,
+          "lost": 3,
+          "score": [
+            0,
+            8
+          ],
+          "diff": -8,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "letter": "G",
+      "teams": [
+        {
+          "position": 1,
+          "name": "Beerginner",
+          "played": 3,
+          "won": 3,
+          "drawn": 0,
+          "lost": 0,
+          "score": [
+            8,
+            0
+          ],
+          "diff": 8,
+          "points": 9
+        },
+        {
+          "position": 2,
+          "name": "Volle Rüstung",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            11,
+            1
+          ],
+          "diff": 10,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "Gebrüder Korn",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            1,
+            12
+          ],
+          "diff": -11,
+          "points": 3
+        },
+        {
+          "position": 4,
+          "name": "King Pong",
+          "played": 3,
+          "won": 0,
+          "drawn": 0,
+          "lost": 3,
+          "score": [
+            0,
+            7
+          ],
+          "diff": -7,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "letter": "H",
+      "teams": [
+        {
+          "position": 1,
+          "name": "TSV Stelle Darts",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            5,
+            2
+          ],
+          "diff": 3,
+          "points": 6
+        },
+        {
+          "position": 2,
+          "name": "1. FC Stoeff",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            3,
+            2
+          ],
+          "diff": 1,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "Starlight Exzess",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            2,
+            3
+          ],
+          "diff": -1,
+          "points": 3
+        },
+        {
+          "position": 4,
+          "name": "Beerleader",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            1,
+            4
+          ],
+          "diff": -3,
+          "points": 3
+        }
+      ]
+    }
+  ],
+  "knockout": [
+    {
+      "id": 1,
+      "round": "Achtelfinale",
+      "a": "Maschine + Ersatzteil",
+      "b": "FC Schwips",
+      "score": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": 2,
+      "round": "Achtelfinale",
+      "a": "Kapuziner's",
+      "b": "Designated Drinkers",
+      "score": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": 3,
+      "round": "Achtelfinale",
+      "a": "2 vs. Alk",
+      "b": "MTV Hoopte Darts",
+      "score": [
+        0,
+        3
+      ]
+    },
+    {
+      "id": 4,
+      "round": "Achtelfinale",
+      "a": "TSV Stelle Darts",
+      "b": "Volle Rüstung",
+      "score": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": 5,
+      "round": "Achtelfinale",
+      "a": "294ers",
+      "b": "Mirlachs",
+      "score": [
+        6,
+        0
+      ]
+    },
+    {
+      "id": 6,
+      "round": "Achtelfinale",
+      "a": "Leber Sport",
+      "b": "Die siamesischen Bierlinge",
+      "score": [
+        0,
+        4
+      ]
+    },
+    {
+      "id": 7,
+      "round": "Achtelfinale",
+      "a": "Kurz & Lang",
+      "b": "Team Bardowicks",
+      "score": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": 8,
+      "round": "Achtelfinale",
+      "a": "Beerginner",
+      "b": "1. FC Stoeff",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": 9,
+      "round": "Viertelfinale",
+      "a": "Maschine + Ersatzteil",
+      "b": "Kapuziner's",
+      "score": [
+        2,
+        0
+      ]
+    },
+    {
+      "id": 10,
+      "round": "Viertelfinale",
+      "a": "MTV Hoopte Darts",
+      "b": "TSV Stelle Darts",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": 11,
+      "round": "Viertelfinale",
+      "a": "294ers",
+      "b": "Die siamesischen Bierlinge",
+      "score": [
+        0,
+        2
+      ]
+    },
+    {
+      "id": 12,
+      "round": "Viertelfinale",
+      "a": "Kurz & Lang",
+      "b": "1. FC Stoeff",
+      "score": [
+        2,
+        0
+      ]
+    },
+    {
+      "id": 13,
+      "round": "Halbfinale",
+      "a": "Maschine + Ersatzteil",
+      "b": "TSV Stelle Darts",
+      "score": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": 14,
+      "round": "Halbfinale",
+      "a": "Die siamesischen Bierlinge",
+      "b": "Kurz & Lang",
+      "score": [
+        0,
+        3
+      ]
+    },
+    {
+      "id": 16,
+      "round": "Spiel um Platz 3",
+      "a": "TSV Stelle Darts",
+      "b": "Die siamesischen Bierlinge",
+      "score": [
+        3,
+        0
+      ]
+    },
+    {
+      "id": 15,
+      "round": "Finale",
+      "a": "Maschine + Ersatzteil",
+      "b": "Kurz & Lang",
+      "score": [
+        2,
+        0
+      ]
+    }
+  ],
+  "groupMatches": [
+    {
+      "id": "group-1",
+      "group": "A",
+      "a": "FC Schwips",
+      "b": "Fix & Fertig",
+      "score": [
+        3,
+        0
+      ],
+      "table": 1
+    },
+    {
+      "id": "group-2",
+      "group": "B",
+      "a": "Mirlachs",
+      "b": "Balls & Tits",
+      "score": [
+        1,
+        0
+      ],
+      "table": 2
+    },
+    {
+      "id": "group-3",
+      "group": "C",
+      "a": "One Hit Wonder",
+      "b": "Leerer Trichter",
+      "score": [
+        0,
+        2
+      ],
+      "table": 3
+    },
+    {
+      "id": "group-4",
+      "group": "D",
+      "a": "Designated Drinkers",
+      "b": "Die siamesischen Bierlinge",
+      "score": [
+        6,
+        0
+      ],
+      "table": 4
+    },
+    {
+      "id": "group-5",
+      "group": "E",
+      "a": "Kurz & Lang",
+      "b": "MTV Hoopte Darts",
+      "score": [
+        1,
+        0
+      ],
+      "table": 5
+    },
+    {
+      "id": "group-6",
+      "group": "F",
+      "a": "Team Bardowicks",
+      "b": "2 vs. Alk",
+      "score": [
+        0,
+        3
+      ],
+      "table": 1
+    },
+    {
+      "id": "group-7",
+      "group": "G",
+      "a": "Volle Rüstung",
+      "b": "Gebrüder Korn",
+      "score": [
+        7,
+        0
+      ],
+      "table": 2
+    },
+    {
+      "id": "group-8",
+      "group": "H",
+      "a": "TSV Stelle Darts",
+      "b": "1. FC Stoeff",
+      "score": [
+        0,
+        2
+      ],
+      "table": 3
+    },
+    {
+      "id": "group-9",
+      "group": "A",
+      "a": "Dick & Dicht²",
+      "b": "294ers",
+      "score": [
+        0,
+        2
+      ],
+      "table": 4
+    },
+    {
+      "id": "group-10",
+      "group": "B",
+      "a": "Maschine + Ersatzteil",
+      "b": "Für Rum und Ehre",
+      "score": [
+        5,
+        0
+      ],
+      "table": 5
+    },
+    {
+      "id": "group-11",
+      "group": "C",
+      "a": "Leber Sport",
+      "b": "Kapuziner's",
+      "score": [
+        0,
+        1
+      ],
+      "table": 1
+    },
+    {
+      "id": "group-12",
+      "group": "D",
+      "a": "Die Bierkönige",
+      "b": "PingPong Pinguins",
+      "score": [
+        0,
+        2
+      ],
+      "table": 2
+    },
+    {
+      "id": "group-13",
+      "group": "E",
+      "a": "uR",
+      "b": "Beers Anatomy",
+      "score": [
+        2,
+        0
+      ],
+      "table": 3
+    },
+    {
+      "id": "group-14",
+      "group": "F",
+      "a": "Ei und Speck",
+      "b": "Die Aperoli Schwestern",
+      "score": [
+        2,
+        0
+      ],
+      "table": 4
+    },
+    {
+      "id": "group-15",
+      "group": "G",
+      "a": "King Pong",
+      "b": "Beerginner",
+      "score": [
+        0,
+        2
+      ],
+      "table": 5
+    },
+    {
+      "id": "group-16",
+      "group": "H",
+      "a": "Beerleader",
+      "b": "Starlight Exzess",
+      "score": [
+        1,
+        0
+      ],
+      "table": 1
+    },
+    {
+      "id": "group-17",
+      "group": "A",
+      "a": "Fix & Fertig",
+      "b": "Dick & Dicht²",
+      "score": [
+        2,
+        0
+      ],
+      "table": 2
+    },
+    {
+      "id": "group-18",
+      "group": "B",
+      "a": "Balls & Tits",
+      "b": "Maschine + Ersatzteil",
+      "score": [
+        1,
+        0
+      ],
+      "table": 3
+    },
+    {
+      "id": "group-19",
+      "group": "C",
+      "a": "Leerer Trichter",
+      "b": "Leber Sport",
+      "score": [
+        0,
+        2
+      ],
+      "table": 4
+    },
+    {
+      "id": "group-20",
+      "group": "D",
+      "a": "Die siamesischen Bierlinge",
+      "b": "Die Bierkönige",
+      "score": [
+        2,
+        0
+      ],
+      "table": 5
+    },
+    {
+      "id": "group-21",
+      "group": "E",
+      "a": "MTV Hoopte Darts",
+      "b": "uR",
+      "score": [
+        2,
+        0
+      ],
+      "table": 1
+    },
+    {
+      "id": "group-22",
+      "group": "F",
+      "a": "2 vs. Alk",
+      "b": "Ei und Speck",
+      "score": [
+        4,
+        0
+      ],
+      "table": 2
+    },
+    {
+      "id": "group-23",
+      "group": "G",
+      "a": "Gebrüder Korn",
+      "b": "King Pong",
+      "score": [
+        1,
+        0
+      ],
+      "table": 3
+    },
+    {
+      "id": "group-24",
+      "group": "H",
+      "a": "1. FC Stoeff",
+      "b": "Beerleader",
+      "score": [
+        1,
+        0
+      ],
+      "table": 4
+    },
+    {
+      "id": "group-25",
+      "group": "A",
+      "a": "294ers",
+      "b": "FC Schwips",
+      "score": [
+        1,
+        0
+      ],
+      "table": 5
+    },
+    {
+      "id": "group-26",
+      "group": "B",
+      "a": "Für Rum und Ehre",
+      "b": "Mirlachs",
+      "score": [
+        0,
+        3
+      ],
+      "table": 1
+    },
+    {
+      "id": "group-27",
+      "group": "C",
+      "a": "Kapuziner's",
+      "b": "One Hit Wonder",
+      "score": [
+        0,
+        1
+      ],
+      "table": 2
+    },
+    {
+      "id": "group-28",
+      "group": "D",
+      "a": "PingPong Pinguins",
+      "b": "Designated Drinkers",
+      "score": [
+        0,
+        1
+      ],
+      "table": 3
+    },
+    {
+      "id": "group-29",
+      "group": "E",
+      "a": "Beers Anatomy",
+      "b": "Kurz & Lang",
+      "score": [
+        0,
+        3
+      ],
+      "table": 4
+    },
+    {
+      "id": "group-30",
+      "group": "F",
+      "a": "Die Aperoli Schwestern",
+      "b": "Team Bardowicks",
+      "score": [
+        0,
+        3
+      ],
+      "table": 5
+    },
+    {
+      "id": "group-31",
+      "group": "G",
+      "a": "Beerginner",
+      "b": "Volle Rüstung",
+      "score": [
+        1,
+        0
+      ],
+      "table": 1
+    },
+    {
+      "id": "group-32",
+      "group": "H",
+      "a": "Starlight Exzess",
+      "b": "TSV Stelle Darts",
+      "score": [
+        0,
+        2
+      ],
+      "table": 2
+    },
+    {
+      "id": "group-33",
+      "group": "A",
+      "a": "294ers",
+      "b": "Fix & Fertig",
+      "score": [
+        1,
+        0
+      ],
+      "table": 3
+    },
+    {
+      "id": "group-34",
+      "group": "B",
+      "a": "Für Rum und Ehre",
+      "b": "Balls & Tits",
+      "score": [
+        1,
+        0
+      ],
+      "table": 4
+    },
+    {
+      "id": "group-35",
+      "group": "C",
+      "a": "Kapuziner's",
+      "b": "Leerer Trichter",
+      "score": [
+        2,
+        0
+      ],
+      "table": 5
+    },
+    {
+      "id": "group-36",
+      "group": "D",
+      "a": "PingPong Pinguins",
+      "b": "Die siamesischen Bierlinge",
+      "score": [
+        0,
+        1
+      ],
+      "table": 1
+    },
+    {
+      "id": "group-37",
+      "group": "E",
+      "a": "Beers Anatomy",
+      "b": "MTV Hoopte Darts",
+      "score": [
+        0,
+        6
+      ],
+      "table": 2
+    },
+    {
+      "id": "group-38",
+      "group": "F",
+      "a": "Die Aperoli Schwestern",
+      "b": "2 vs. Alk",
+      "score": [
+        0,
+        3
+      ],
+      "table": 3
+    },
+    {
+      "id": "group-39",
+      "group": "G",
+      "a": "Beerginner",
+      "b": "Gebrüder Korn",
+      "score": [
+        5,
+        0
+      ],
+      "table": 4
+    },
+    {
+      "id": "group-40",
+      "group": "H",
+      "a": "Starlight Exzess",
+      "b": "1. FC Stoeff",
+      "score": [
+        2,
+        0
+      ],
+      "table": 5
+    },
+    {
+      "id": "group-41",
+      "group": "A",
+      "a": "FC Schwips",
+      "b": "Dick & Dicht²",
+      "score": [
+        2,
+        0
+      ],
+      "table": 1
+    },
+    {
+      "id": "group-42",
+      "group": "B",
+      "a": "Mirlachs",
+      "b": "Maschine + Ersatzteil",
+      "score": [
+        0,
+        2
+      ],
+      "table": 2
+    },
+    {
+      "id": "group-43",
+      "group": "C",
+      "a": "One Hit Wonder",
+      "b": "Leber Sport",
+      "score": [
+        0,
+        2
+      ],
+      "table": 3
+    },
+    {
+      "id": "group-44",
+      "group": "D",
+      "a": "Designated Drinkers",
+      "b": "Die Bierkönige",
+      "score": [
+        4,
+        0
+      ],
+      "table": 4
+    },
+    {
+      "id": "group-45",
+      "group": "E",
+      "a": "Kurz & Lang",
+      "b": "uR",
+      "score": [
+        2,
+        0
+      ],
+      "table": 5
+    },
+    {
+      "id": "group-46",
+      "group": "F",
+      "a": "Team Bardowicks",
+      "b": "Ei und Speck",
+      "score": [
+        4,
+        0
+      ],
+      "table": 1
+    },
+    {
+      "id": "group-47",
+      "group": "G",
+      "a": "Volle Rüstung",
+      "b": "King Pong",
+      "score": [
+        4,
+        0
+      ],
+      "table": 2
+    },
+    {
+      "id": "group-48",
+      "group": "H",
+      "a": "TSV Stelle Darts",
+      "b": "Beerleader",
+      "score": [
+        3,
+        0
+      ],
+      "table": 3
+    }
+  ]
+}

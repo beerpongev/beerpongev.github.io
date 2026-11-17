@@ -1,0 +1,1038 @@
+{
+  "id": "official-11-2022",
+  "sourceUrl": "https://www.meinspielplan.de/plan/f16PXx",
+  "checkedOn": "2026-11-17",
+  "teamCount": 28,
+  "totalMatches": 58,
+  "placements": [
+    {
+      "position": 1,
+      "name": "Designated Drinkers"
+    },
+    {
+      "position": 2,
+      "name": "Olympiakos Bieräus"
+    },
+    {
+      "position": 3,
+      "name": "Knief und ich"
+    },
+    {
+      "position": 4,
+      "name": "FC Schwips"
+    }
+  ],
+  "groups": [
+    {
+      "letter": "A",
+      "teams": [
+        {
+          "position": 1,
+          "name": "King Pong",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            5,
+            1
+          ],
+          "diff": 4,
+          "points": 6
+        },
+        {
+          "position": 2,
+          "name": "Gruppenphase raus",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            7,
+            3
+          ],
+          "diff": 4,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "One Hit Wonder",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            2,
+            6
+          ],
+          "diff": -4,
+          "points": 6
+        },
+        {
+          "position": 4,
+          "name": "Ball of Duty",
+          "played": 3,
+          "won": 0,
+          "drawn": 0,
+          "lost": 3,
+          "score": [
+            0,
+            4
+          ],
+          "diff": -4,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "letter": "B",
+      "teams": [
+        {
+          "position": 1,
+          "name": "2 vs. Alk",
+          "played": 3,
+          "won": 3,
+          "drawn": 0,
+          "lost": 0,
+          "score": [
+            8,
+            0
+          ],
+          "diff": 8,
+          "points": 9
+        },
+        {
+          "position": 2,
+          "name": "Olympiakos Bieräus",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            5,
+            1
+          ],
+          "diff": 4,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "Steven K aus W",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            3,
+            6
+          ],
+          "diff": -3,
+          "points": 3
+        },
+        {
+          "position": 4,
+          "name": "Drink 182",
+          "played": 3,
+          "won": 0,
+          "drawn": 0,
+          "lost": 3,
+          "score": [
+            0,
+            9
+          ],
+          "diff": -9,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "letter": "C",
+      "teams": [
+        {
+          "position": 1,
+          "name": "Designated Drinkers",
+          "played": 3,
+          "won": 3,
+          "drawn": 0,
+          "lost": 0,
+          "score": [
+            5,
+            0
+          ],
+          "diff": 5,
+          "points": 9
+        },
+        {
+          "position": 2,
+          "name": "Siamesische Bierlinge",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            9,
+            2
+          ],
+          "diff": 7,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "Any hole is our goal",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            2,
+            6
+          ],
+          "diff": -4,
+          "points": 3
+        },
+        {
+          "position": 4,
+          "name": "#beer",
+          "played": 3,
+          "won": 0,
+          "drawn": 0,
+          "lost": 3,
+          "score": [
+            0,
+            8
+          ],
+          "diff": -8,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "letter": "D",
+      "teams": [
+        {
+          "position": 1,
+          "name": "Die Beerginner",
+          "played": 3,
+          "won": 3,
+          "drawn": 0,
+          "lost": 0,
+          "score": [
+            8,
+            0
+          ],
+          "diff": 8,
+          "points": 9
+        },
+        {
+          "position": 2,
+          "name": "Team Bardowicks",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            3,
+            1
+          ],
+          "diff": 2,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "two darts zero cup",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            1,
+            2
+          ],
+          "diff": -1,
+          "points": 3
+        },
+        {
+          "position": 4,
+          "name": "Die Klügere kippt nach",
+          "played": 3,
+          "won": 0,
+          "drawn": 0,
+          "lost": 3,
+          "score": [
+            0,
+            9
+          ],
+          "diff": -9,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "letter": "E",
+      "teams": [
+        {
+          "position": 1,
+          "name": "Knief und ich",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            8,
+            1
+          ],
+          "diff": 7,
+          "points": 6
+        },
+        {
+          "position": 2,
+          "name": "Peter Pong & Trinkerbell",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            6,
+            3
+          ],
+          "diff": 3,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "FC Schwips",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            4,
+            4
+          ],
+          "diff": 0,
+          "points": 6
+        },
+        {
+          "position": 4,
+          "name": "Beer Pong Penguins",
+          "played": 3,
+          "won": 0,
+          "drawn": 0,
+          "lost": 3,
+          "score": [
+            0,
+            10
+          ],
+          "diff": -10,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "letter": "F",
+      "teams": [
+        {
+          "position": 1,
+          "name": "TSV Tespe",
+          "played": 3,
+          "won": 3,
+          "drawn": 0,
+          "lost": 0,
+          "score": [
+            5,
+            0
+          ],
+          "diff": 5,
+          "points": 9
+        },
+        {
+          "position": 2,
+          "name": "Kurz & Lang",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            5,
+            1
+          ],
+          "diff": 4,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "Gruppe Riege",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            2,
+            7
+          ],
+          "diff": -5,
+          "points": 3
+        },
+        {
+          "position": 4,
+          "name": "Balla Lakers",
+          "played": 3,
+          "won": 0,
+          "drawn": 0,
+          "lost": 3,
+          "score": [
+            0,
+            4
+          ],
+          "diff": -4,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "letter": "G",
+      "teams": [
+        {
+          "position": 1,
+          "name": "Dynamo Tresen",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            7,
+            1
+          ],
+          "diff": 6,
+          "points": 6
+        },
+        {
+          "position": 2,
+          "name": "Volle Rüstung",
+          "played": 3,
+          "won": 2,
+          "drawn": 0,
+          "lost": 1,
+          "score": [
+            5,
+            2
+          ],
+          "diff": 3,
+          "points": 6
+        },
+        {
+          "position": 3,
+          "name": "Die kleprigen Banditen",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            3,
+            6
+          ],
+          "diff": -3,
+          "points": 3
+        },
+        {
+          "position": 4,
+          "name": "Cola Korn",
+          "played": 3,
+          "won": 1,
+          "drawn": 0,
+          "lost": 2,
+          "score": [
+            1,
+            7
+          ],
+          "diff": -6,
+          "points": 3
+        }
+      ]
+    }
+  ],
+  "knockout": [
+    {
+      "id": 1,
+      "round": "Achtelfinale",
+      "a": "King Pong",
+      "b": "FC Schwips",
+      "score": [
+        0,
+        3
+      ]
+    },
+    {
+      "id": 2,
+      "round": "Achtelfinale",
+      "a": "TSV Tespe",
+      "b": "Team Bardowicks",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": 3,
+      "round": "Achtelfinale",
+      "a": "Die Beerginner",
+      "b": "Olympiakos Bieräus",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": 4,
+      "round": "Achtelfinale",
+      "a": "Kurz & Lang",
+      "b": "Volle Rüstung",
+      "score": [
+        5,
+        0
+      ]
+    },
+    {
+      "id": 5,
+      "round": "Achtelfinale",
+      "a": "2 vs. Alk",
+      "b": "One Hit Wonder",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": 6,
+      "round": "Achtelfinale",
+      "a": "Knief und ich",
+      "b": "Siamesische Bierlinge",
+      "score": [
+        2,
+        0
+      ]
+    },
+    {
+      "id": 7,
+      "round": "Achtelfinale",
+      "a": "Designated Drinkers",
+      "b": "Gruppenphase raus",
+      "score": [
+        2,
+        0
+      ]
+    },
+    {
+      "id": 8,
+      "round": "Achtelfinale",
+      "a": "Dynamo Tresen",
+      "b": "Peter Pong & Trinkerbell",
+      "score": [
+        3,
+        0
+      ]
+    },
+    {
+      "id": 9,
+      "round": "Viertelfinale",
+      "a": "FC Schwips",
+      "b": "Team Bardowicks",
+      "score": [
+        2,
+        0
+      ]
+    },
+    {
+      "id": 10,
+      "round": "Viertelfinale",
+      "a": "Olympiakos Bieräus",
+      "b": "Kurz & Lang",
+      "score": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": 11,
+      "round": "Viertelfinale",
+      "a": "One Hit Wonder",
+      "b": "Knief und ich",
+      "score": [
+        0,
+        2
+      ]
+    },
+    {
+      "id": 12,
+      "round": "Viertelfinale",
+      "a": "Designated Drinkers",
+      "b": "Dynamo Tresen",
+      "score": [
+        2,
+        0
+      ]
+    },
+    {
+      "id": 13,
+      "round": "Halbfinale",
+      "a": "FC Schwips",
+      "b": "Olympiakos Bieräus",
+      "score": [
+        0,
+        4
+      ]
+    },
+    {
+      "id": 14,
+      "round": "Halbfinale",
+      "a": "Knief und ich",
+      "b": "Designated Drinkers",
+      "score": [
+        0,
+        2
+      ]
+    },
+    {
+      "id": 16,
+      "round": "Spiel um Platz 3",
+      "a": "FC Schwips",
+      "b": "Knief und ich",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": 15,
+      "round": "Finale",
+      "a": "Olympiakos Bieräus",
+      "b": "Designated Drinkers",
+      "score": [
+        0,
+        1
+      ]
+    }
+  ],
+  "groupMatches": [
+    {
+      "id": "group-1",
+      "group": "A",
+      "a": "King Pong",
+      "b": "One Hit Wonder",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "group-2",
+      "group": "B",
+      "a": "Steven K aus W",
+      "b": "2 vs. Alk",
+      "score": [
+        0,
+        4
+      ]
+    },
+    {
+      "id": "group-3",
+      "group": "C",
+      "a": "Designated Drinkers",
+      "b": "Any hole is our goal",
+      "score": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "group-4",
+      "group": "D",
+      "a": "Team Bardowicks",
+      "b": "Die Klügere kippt nach",
+      "score": [
+        2,
+        0
+      ]
+    },
+    {
+      "id": "group-5",
+      "group": "E",
+      "a": "Knief und ich",
+      "b": "Peter Pong & Trinkerbell",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "group-6",
+      "group": "F",
+      "a": "Kurz & Lang",
+      "b": "TSV Tespe",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "group-7",
+      "group": "G",
+      "a": "Volle Rüstung",
+      "b": "Dynamo Tresen",
+      "score": [
+        0,
+        2
+      ]
+    },
+    {
+      "id": "group-8",
+      "group": "A",
+      "a": "Gruppenphase raus",
+      "b": "Ball of Duty",
+      "score": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "group-9",
+      "group": "B",
+      "a": "Drink 182",
+      "b": "Olympiakos Bieräus",
+      "score": [
+        0,
+        3
+      ]
+    },
+    {
+      "id": "group-10",
+      "group": "C",
+      "a": "#beer",
+      "b": "Siamesische Bierlinge",
+      "score": [
+        0,
+        4
+      ]
+    },
+    {
+      "id": "group-11",
+      "group": "D",
+      "a": "two darts zero cup",
+      "b": "Die Beerginner",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "group-12",
+      "group": "E",
+      "a": "FC Schwips",
+      "b": "Beer Pong Penguins",
+      "score": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "group-13",
+      "group": "F",
+      "a": "Gruppe Riege",
+      "b": "Balla Lakers",
+      "score": [
+        2,
+        0
+      ]
+    },
+    {
+      "id": "group-14",
+      "group": "G",
+      "a": "Cola Korn",
+      "b": "Die kleprigen Banditen",
+      "score": [
+        0,
+        3
+      ]
+    },
+    {
+      "id": "group-15",
+      "group": "A",
+      "a": "One Hit Wonder",
+      "b": "Gruppenphase raus",
+      "score": [
+        0,
+        6
+      ]
+    },
+    {
+      "id": "group-16",
+      "group": "B",
+      "a": "2 vs. Alk",
+      "b": "Drink 182",
+      "score": [
+        3,
+        0
+      ]
+    },
+    {
+      "id": "group-17",
+      "group": "C",
+      "a": "Any hole is our goal",
+      "b": "#beer",
+      "score": [
+        2,
+        0
+      ]
+    },
+    {
+      "id": "group-18",
+      "group": "D",
+      "a": "Die Klügere kippt nach",
+      "b": "two darts zero cup",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "group-19",
+      "group": "E",
+      "a": "Peter Pong & Trinkerbell",
+      "b": "FC Schwips",
+      "score": [
+        0,
+        3
+      ]
+    },
+    {
+      "id": "group-20",
+      "group": "F",
+      "a": "TSV Tespe",
+      "b": "Gruppe Riege",
+      "score": [
+        3,
+        0
+      ]
+    },
+    {
+      "id": "group-21",
+      "group": "G",
+      "a": "Dynamo Tresen",
+      "b": "Cola Korn",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "group-22",
+      "group": "A",
+      "a": "Ball of Duty",
+      "b": "King Pong",
+      "score": [
+        0,
+        2
+      ]
+    },
+    {
+      "id": "group-23",
+      "group": "B",
+      "a": "Olympiakos Bieräus",
+      "b": "Steven K aus W",
+      "score": [
+        2,
+        0
+      ]
+    },
+    {
+      "id": "group-24",
+      "group": "C",
+      "a": "Siamesische Bierlinge",
+      "b": "Designated Drinkers",
+      "score": [
+        0,
+        2
+      ]
+    },
+    {
+      "id": "group-25",
+      "group": "D",
+      "a": "Die Beerginner",
+      "b": "Team Bardowicks",
+      "score": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "group-26",
+      "group": "E",
+      "a": "Beer Pong Penguins",
+      "b": "Knief und ich",
+      "score": [
+        0,
+        4
+      ]
+    },
+    {
+      "id": "group-27",
+      "group": "F",
+      "a": "Balla Lakers",
+      "b": "Kurz & Lang",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "group-28",
+      "group": "G",
+      "a": "Die kleprigen Banditen",
+      "b": "Volle Rüstung",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "group-29",
+      "group": "A",
+      "a": "Ball of Duty",
+      "b": "One Hit Wonder",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "group-30",
+      "group": "B",
+      "a": "Olympiakos Bieräus",
+      "b": "2 vs. Alk",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "group-31",
+      "group": "C",
+      "a": "Siamesische Bierlinge",
+      "b": "Any hole is our goal",
+      "score": [
+        5,
+        0
+      ]
+    },
+    {
+      "id": "group-32",
+      "group": "D",
+      "a": "Die Beerginner",
+      "b": "Die Klügere kippt nach",
+      "score": [
+        6,
+        0
+      ]
+    },
+    {
+      "id": "group-33",
+      "group": "E",
+      "a": "Beer Pong Penguins",
+      "b": "Peter Pong & Trinkerbell",
+      "score": [
+        0,
+        5
+      ]
+    },
+    {
+      "id": "group-34",
+      "group": "F",
+      "a": "Balla Lakers",
+      "b": "TSV Tespe",
+      "score": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "group-35",
+      "group": "G",
+      "a": "Die kleprigen Banditen",
+      "b": "Dynamo Tresen",
+      "score": [
+        0,
+        5
+      ]
+    },
+    {
+      "id": "group-36",
+      "group": "A",
+      "a": "King Pong",
+      "b": "Gruppenphase raus",
+      "score": [
+        3,
+        0
+      ]
+    },
+    {
+      "id": "group-37",
+      "group": "B",
+      "a": "Steven K aus W",
+      "b": "Drink 182",
+      "score": [
+        3,
+        0
+      ]
+    },
+    {
+      "id": "group-38",
+      "group": "C",
+      "a": "Designated Drinkers",
+      "b": "#beer",
+      "score": [
+        2,
+        0
+      ]
+    },
+    {
+      "id": "group-39",
+      "group": "D",
+      "a": "Team Bardowicks",
+      "b": "two darts zero cup",
+      "score": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "group-40",
+      "group": "E",
+      "a": "Knief und ich",
+      "b": "FC Schwips",
+      "score": [
+        4,
+        0
+      ]
+    },
+    {
+      "id": "group-41",
+      "group": "F",
+      "a": "Kurz & Lang",
+      "b": "Gruppe Riege",
+      "score": [
+        4,
+        0
+      ]
+    },
+    {
+      "id": "group-42",
+      "group": "G",
+      "a": "Volle Rüstung",
+      "b": "Cola Korn",
+      "score": [
+        4,
+        0
+      ]
+    }
+  ]
+}

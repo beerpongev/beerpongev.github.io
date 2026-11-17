@@ -60,7 +60,7 @@ export function bindMembership({demo=false}={}) {
       const data={firstName:get('Vorname'),lastName:get('Nachname'),birthDate:birthISO,occupation:get('Beruf'),street:get('Straße und Hausnummer'),postalCode:get('Postleitzahl'),city:get('Wohnort'),email:get('email'),phone:get('Telefon'),applicationPlace:get('Antragsort'),applicationDate:get('Antragsdatum'),accountHolder:get('Abweichender Kontoinhaber'),bank:get('Kreditinstitut'),iban:get('IBAN'),debitPlace:get('Ort der Einzugsermächtigung'),debitDate:get('Datum der Einzugsermächtigung')};
       const signatures=Object.fromEntries(['application','debit'].map(id=>[id,document.querySelector('#signature-'+id).toDataURL('image/png')]));
       const bytes=await createMembershipPDF(data,signatures);
-      await saveMembershipPDF(bytes,membershipFilename(data));
+      await saveMembershipPDF(bytes,membershipFilename(data),data);
       form.reset();form.querySelectorAll('[data-signature-clear]').forEach(x=>x.click());manual=false;
       document.querySelector('#membership-status').textContent='Dein Antrag wurde gespeichert und liegt dem Vorstand zur Bearbeitung vor.';
     }catch(error){fail(error.code==='auth/operation-not-allowed'?'Die anonyme Anmeldung muss in Firebase aktiviert werden. Bitte die Spielleitung informieren.':error.message||'Speichern fehlgeschlagen. Bitte erneut versuchen.');}

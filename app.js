@@ -1,21 +1,33 @@
 import * as E from './engine.js';
 import * as cloud from './firebase.js';
+import {createDemoRegistry} from './registration-demo.js';
+import {createMemberWorkflows} from './member-ui.js';
+import {registrationView,bindRegistration,refreshRegistrationAvailability,createRegistryManagement} from './registration-ui.js';
 import {escapeHTML as e,localDate} from './ui.js';
 import {parseTeamsCSV,validateBackup} from './data.js';
 import {loadDocuments,rulesView,bindDocumentSearch,documentPages} from './documents.js';
 import {membershipView,bindMembership} from './membership.js';
+import {DEFAULT_TOURNAMENTS,mergeTournamentCatalog,validTournamentId,validateTournamentInfo,tournamentDate,homeView,tournamentsView,externalArchiveView,loadClubArchive,bindArchiveGames} from './club.js';
 
 const $=s=>document.querySelector(s),localDemo=!cloud.configured,onlineDemoRequested=cloud.configured&&new URL(location.href).searchParams.get('demo')==='1';
-const DEMO_KEY=onlineDemoRequested?'beerpong-board-demo-'+cloud.liveCacheKey:'beerpong-demo-v2';
+const DEMO_BASE_KEY=onlineDemoRequested?'beerpong-board-demo-'+cloud.liveCacheKey:'beerpong-demo-v2';
+let catalog=mergeTournamentCatalog(),catalogLoaded=localDemo,selectedTournamentId=validTournamentId(new URL(location.href).searchParams.get('turnier'))?new URL(location.href).searchParams.get('turnier'):'main';
+let DEMO_KEY=selectedTournamentId==='main'?DEMO_BASE_KEY:DEMO_BASE_KEY+'-'+selectedTournamentId;
+let assignedTeamId='',assignedTournamentId='main',cloudReady=false;
+const currentTournament=()=>catalog.find(t=>t.id===selectedTournamentId);
+const isReadOnly=()=>!currentTournament()||currentTournament().archived||!!currentTournament().externalUrl;
+const stateCacheKey=()=>selectedTournamentId==='main'?cloud.liveCacheKey:cloud.liveCacheKey+'-'+selectedTournamentId;
 let demo=localDemo,demoAuthorized=false,demoGateError='',demoAccessRole='guest';
 let state=null,role='guest',teamId='',user=null,users=[],synced=false,busy=false;
-let view=new URL(location.href).searchParams.get('bereich')==='mitgliedschaft'?'membership':'overview';
+const routeNames={home:'startseite',tournaments:'turniere',overview:'turnier',groups:'gruppen',bracket:'ko',teams:'teams',rules:'regelwerk',membership:'mitgliedschaft',admin:'spielleitung',board:'vorstand',registration:'anmeldung',registrations:'anmeldungen-verwalten',members:'mitglieder-verwalten',applications:'antraege',profile:'meine-daten',games:'ergebnisse'};
+function routeView(){return Object.keys(routeNames).find(k=>routeNames[k]===new URL(location.href).searchParams.get('bereich'))??(new URL(location.href).searchParams.has('turnier')?'overview':'home');}
+let view=routeView();
 let groupFilter='all',roundFilter='r16',gameFilter='open',tableFilter='all',search='',matchLimit=12,ownOnly=false,teamMode='teams';
 let modal={},installEvent,toastTimer,privateApplications=[];
 let playerCalloutMarkup='';
 const admin=()=>['admin','board'].includes(role),board=()=>role==='board'&&(!onlineDemoRequested||demoAccessRole==='board');
 const demoRoles=()=>['guest','player','admin',...(!onlineDemoRequested||demoAccessRole==='board'?['board']:[])];
-const writable=()=>!busy&&(demo||(synced&&navigator.onLine))&&['board','admin','player'].includes(role);
+const writable=()=>!busy&&!isReadOnly()&&(demo||(synced&&navigator.onLine))&&['board','admin','player'].includes(role);
 const team=id=>state?.teams.find(t=>t.id===id),own=id=>!!teamId&&id===teamId;
 const name=id=>`<span class="${own(id)?'own-team-name':''}">${e(team(id)?.name??'Noch offen')}${own(id)?'<span class="own-badge">Dein Team</span>':''}</span>`;
 const canScore=m=>!!m&&writable()&&(admin()||(role==='player'&&state.allowSelfScoring&&m.phase===state.phase&&[m.a,m.b].includes(teamId)));
@@ -24,6 +36,42 @@ const statusLabels={free:'Frei',open:'Zugewiesen · offen',preparing:'In Vorbere
 const nextLabel=s=>({setup:'Gruppenphase starten',group:'Achtelfinale starten',r16:'Viertelfinale starten',quarter:'Halbfinale starten',semi:'Finalspiele starten',final:'Turnier abschließen',complete:'Turnier beendet'})[s.phase];
 const roleLabel=r=>({guest:'Zuschauer',player:'Mitspieler',admin:'Spielleitung',board:'Vorstand'})[r]??'Zuschauer';
 function toast(message){clearTimeout(toastTimer);$('#toast').textContent=message;$('#toast').hidden=false;toastTimer=setTimeout(()=>{$('#toast').hidden=true;},7000);}
+const demoRegistry=createDemoRegistry();
+let registrationSettings={};
+const registrationEvent=id=>demo?demoRegistry.getSettings(id):registrationSettings[id];
+const registryManagement=createRegistryManagement({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,isBoard:board,settings:registrationEvent,settingsChanged:()=>render(),toast,transferTeam,invitePlayers,accountLink:m=>memberWorkflows.accountLink(m)});
+const memberWorkflows=createMemberWorkflows({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,isBoard:board,user:()=>user,users:()=>users,toast,dialog:openDialog,closeDialog:()=>$('#dialog').close(),download:downloadPrivatePDF,downloadAll:rows=>downloadMemberships(rows),refreshRegistry:()=>{view='members';render(true);}});
+async function transferTeam(row,{invite=false}={}){
+ if(invite&&!demo&&row.players.some(p=>!p.email))throw Error('Bitte vor dem Einladen die persönlichen E-Mail-Adressen ergänzen oder die automatische Einladung abwählen.');
+ if(!board()||row.status!=='confirmed')throw Error('Nur angemeldete Teams können durch den Vorstand übernommen werden.');
+ if(!state||state.phase!=='setup')throw Error('Bitte zuerst einen Spielplan anlegen. Teams können nur vor dem Start der Gruppenphase übernommen werden.');
+ let targetId=row.teamId||`reg-${row.id}`;
+ if(!row.teamId){const existing=state.teams.find(t=>nameKeyForTeam(t.name)===nameKeyForTeam(row.teamName));if(existing){if(!confirm(`Das Team „${existing.name}“ existiert bereits mit ${existing.p1||'Person 1 offen'} und ${existing.p2||'Person 2 offen'}. Mit der Anmeldung von ${row.players.map(p=>p.firstName+' '+p.lastName).join(' und ')} verknüpfen? Team-ID und Gruppe bleiben erhalten; öffentlich werden die Vornamen übernommen.`))throw Error('Übernahme abgebrochen.');targetId=existing.id;}}
+ await adminCommit(s=>{
+  const next=E.clone(s);if(next.phase!=='setup')throw Error('Die Gruppenphase wurde inzwischen gestartet.');
+  let existing=next.teams.find(t=>t.id===targetId);
+  const sameName=next.teams.find(t=>nameKeyForTeam(t.name)===nameKeyForTeam(row.teamName)&&t.id!==targetId);
+  if(sameName)throw Error('Ein Team mit diesem Namen existiert bereits. Bitte dessen Zuordnung und Namen zuerst prüfen.');
+  if(!existing){existing=next.teams.find(t=>!t.p1&&!t.p2);if(existing)targetId=existing.id;}
+  const fields={id:targetId,name:row.teamName,p1:row.players[0].firstName,p2:row.players[1].firstName,group:existing?.group??''};
+  if(existing)Object.assign(existing,fields);else{if(next.teams.length>=32)throw Error('Der Spielplan enthält bereits 32 ausgefüllte Teams. Bitte vorhandene Teamplätze zuerst prüfen.');next.teams.push(fields);}return next;
+ });
+ await(demo?demoRegistry:cloud).saveRegistration(selectedTournamentId,{...row,teamId:targetId},{entryId:row.id,status:row.status});
+ if(invite&&!demo){try{await invitePlayers({...row,teamId:targetId},{ask:false});}catch(error){throw Error('Team wurde übernommen. Die Einladungen waren nicht vollständig erfolgreich: '+humanError(error)+' Bitte über Spielerkonten einladen fortsetzen.');}}
+}
+const nameKeyForTeam=value=>value.trim().toLocaleLowerCase('de');
+async function invitePlayers(row,{ask=true}={}){
+ if(demo)throw Error('Echte Spielerkonten und E-Mails sind in der Demo deaktiviert.');
+ if(!board()||!row.teamId||row.status!=='confirmed')throw Error('Bitte zuerst das bestätigte Team in den Spielplan übernehmen.');
+ if(row.players.some(p=>!p.email)||row.players[0].email===row.players[1].email)throw Error('Bitte zwei unterschiedliche persönliche E-Mail-Adressen ergänzen.');
+ if(ask&&!confirm(`Spielerkonten für ${row.players.map(p=>p.email).join(' und ')} mit diesem Team verknüpfen? Neue Konten erhalten per E-Mail einen Passwortlink. Bestehende Spielerkonten erhalten die neue Teamzuordnung.`))return;
+ for(const person of row.players){
+  if(!board())throw Error('Vorstandsberechtigung fehlt.');
+  const existing=users.find(u=>u.email.toLowerCase()===person.email.toLowerCase()),data={name:`${person.firstName} ${person.lastName}`,email:person.email,role:'player',teamId:row.teamId,tournamentId:selectedTournamentId};
+  if(existing&&['board','admin'].includes(existing.role)){toast('Das Leitungskonto '+person.email+' behält seine vorhandenen Rechte.');continue;}
+  if(existing)await cloud.setRole(existing.uid,data);else await cloud.createAccount(data);
+ }
+}
 function humanError(error){return({'auth/invalid-credential':'E-Mail oder Passwort stimmt nicht.','auth/invalid-email':'Bitte eine gültige E-Mail-Adresse eingeben.','auth/email-already-in-use':'Das Konto existiert bereits. Bitte dessen UID über „Vorhandenes Konto zuweisen“ verknüpfen.','auth/weak-password':'Bitte ein stärkeres Passwort verwenden.','auth/requires-recent-login':'Bitte erneut anmelden und die Aktion wiederholen.','auth/unauthorized-continue-uri':'Bitte beerpongev.github.io unter Firebase Authentication → Einstellungen → Autorisierte Domains hinzufügen.','auth/too-many-requests':'Zu viele Versuche. Bitte kurz warten.','permission-denied':'Keine Berechtigung. Bitte Teamzuordnung, Selbsteingabe und veröffentlichte Firestore-Regeln prüfen.','unavailable':'Keine Verbindung zu Firebase. Änderungen benötigen Internet.'})[error.code]??error.message??'Aktion fehlgeschlagen.';}
 async function task(fn,message,close=true){
   if(busy)return;busy=true;document.body.classList.add('busy');document.querySelectorAll('dialog button[type=submit]').forEach(b=>b.disabled=true);
@@ -33,6 +81,7 @@ async function task(fn,message,close=true){
 }
 async function commit(transform,options={}){
   if(onlineDemoRequested&&!demoAuthorized)throw new Error('Die Online-Demo ist nur für eingeloggte Spielleitung und Vorstand freigegeben.');
+  if(isReadOnly())throw new Error('Archivierte Turniere sind nur lesbar.');
   if(!['board','admin','player'].includes(role))throw new Error('Bitte mit Schreibberechtigung anmelden.');
   if(!demo&&(!synced||!navigator.onLine))throw new Error('Änderungen benötigen eine bestätigte Live-Verbindung.');
   if(!demo)return cloud.mutate(transform,options.expectedRevision,options);
@@ -43,18 +92,74 @@ async function commit(transform,options={}){
 }
 function adminCommit(transform,revision=state?.revision){if(!admin())throw new Error('Diese Aktion ist der Spielleitung vorbehalten.');return commit(transform,{expectedRevision:revision});}
 
+function updateDemoKey(){DEMO_KEY=selectedTournamentId==='main'?DEMO_BASE_KEY:DEMO_BASE_KEY+'-'+selectedTournamentId;}
+function loadDemoCatalog(){try{catalog=mergeTournamentCatalog(JSON.parse(localStorage.getItem(DEMO_BASE_KEY+'-catalog'))??[]);}catch{catalog=mergeTournamentCatalog();}catalogLoaded=true;}
+function saveDemoCatalog(info,id){catalog=mergeTournamentCatalog([...catalog,{...info,id}]);localStorage.setItem(DEMO_BASE_KEY+'-catalog',JSON.stringify(catalog));}
+function refreshOwnTeam(){teamId=role==='player'&&(demo||assignedTournamentId===selectedTournamentId)?demo?teamId:assignedTeamId:'';}
+function readStateCache(){state=null;try{const saved=JSON.parse(localStorage.getItem(stateCacheKey()));if(saved?.schema===2)state=validateBackup({format:'beerpong-v2',state:saved});}catch{/* Öffentlicher Lesecache. */}}
+function syncLocation(push=false){
+  const url=new URL(location.href);url.searchParams.delete('bereich');url.searchParams.delete('turnier');
+  if(view!=='home')url.searchParams.set('bereich',routeNames[view]??'turnier');
+  if(!['home','tournaments','rules','membership'].includes(view))url.searchParams.set('turnier',selectedTournamentId);
+  if(url.href!==location.href)history[push?'pushState':'replaceState']({},'',url);
+}
+function navigateView(next){
+  if(busy)return;
+  if(!Object.hasOwn(routeNames,next))return;
+  if(['admin','registrations'].includes(next)&&isReadOnly()){
+    const active=catalog.find(t=>!t.archived&&!t.externalUrl);if(active){void chooseTournament(active.id).then(()=>{view=next;syncLocation(true);render(true);});return;}
+  }
+  view=next;syncLocation(true);render(true);window.scrollTo(0,0);
+}
+async function chooseTournament(id,keepBoard=false){
+  if(busy)return;
+  if(!catalog.some(t=>t.id===id)){toast('Dieses Turnier ist nicht bekannt.');return;}
+  $('#dialog').close();selectedTournamentId=id;state=null;synced=false;teamId='';refreshOwnTeam();
+  groupFilter='all';roundFilter='r16';gameFilter=isReadOnly()?'done':'open';tableFilter='all';ownOnly=false;search='';matchLimit=12;
+  view=keepBoard&&board()?'board':'overview';updateDemoKey();
+  if(demo){if(!currentTournament().externalUrl)loadDemoState();if(role==='player')teamId=state?.teams[0]?.id??'';}
+  else{readStateCache();if(cloudReady)cloud.selectTournament(currentTournament().externalUrl?null:id);}
+  syncLocation(true);render(true);window.scrollTo(0,0);
+}
+function renderTournamentNavigation(){
+  const show=['overview','groups','bracket','teams','admin','board','registrations','games'].includes(view),meta=currentTournament();
+  $('#tournament-context').hidden=!show;$('#tournament-navigation').hidden=!show||['board','registrations'].includes(view);
+  $('#archive-games-tab').hidden=!meta?.externalUrl;$('#tournament-navigation').classList.toggle('has-archive-results',!!meta?.externalUrl);
+  if(!show)return;
+  $('#tournament-context').innerHTML=`<div><p class="eyebrow">${meta?.archived?'TURNIERARCHIV':'AUSGEWÄHLTES TURNIER'}</p><label for="tournament-selector" class="sr-only">Turnier auswählen</label><select id="tournament-selector" ${busy?'disabled':''}>${catalog.map(t=>`<option value="${e(t.id)}" ${t.id===selectedTournamentId?'selected':''}>${e(t.title)} · ${t.date.slice(0,4)}${t.archived?' · Archiv':''}</option>`).join('')}</select>${meta?`<p class="legend">${e(tournamentDate(meta))} · ${e(meta.venue)}</p>`:''}</div>${meta?.archived?'<span class="tag">ARCHIV · NUR LESEN</span>':''}`;
+}
+function tournamentDialog(meta){
+  if(!board())return;
+  openDialog(meta?'Turnierdaten bearbeiten':'Neues Turnier',`${input('Turniername','title',meta?.title??'','text','required maxlength="60"')}${input('Offizielle Turniernummer','edition',meta?.edition??Math.max(...catalog.map(t=>t.edition))+1,'number','required min="1" max="999"')}${input('Datum','date',meta?.date??'','date','required')}${input('Veranstaltungsort','venue',meta?.venue??'DGH Stöckte','text','required maxlength="120"')}<p>Ein neues Turnier startet mit leeren Teams, eigener Gruppenphase und eigener Tischverwaltung.</p>`,'tournament',{catalogId:meta?.id??null});
+}
+async function saveTournamentForm(data,info){
+  if(!board())throw Error('Turniere legt der Vorstand an.');
+  const meta=validateTournamentInfo({...data,archived:false,externalUrl:''}),id=info.catalogId??`official-${meta.edition}-${meta.date.replaceAll('-','')}`;
+  if(info.catalogId&&currentTournament()?.archived)throw Error('Archivierte Turniere sind nur lesbar.');
+  if(!info.catalogId&&catalog.some(t=>t.id===id))throw Error('Dieses Turnier existiert bereits.');
+  if(demo){saveDemoCatalog(meta,id);if(!info.catalogId){const fresh={...E.emptyTournament(),title:meta.title};localStorage.setItem(DEMO_BASE_KEY+'-'+id,JSON.stringify(fresh));}}
+  else if(info.catalogId)await cloud.saveTournamentInfo(id,meta);
+  else await cloud.createTournament(id,meta,{...E.emptyTournament(),title:meta.title});
+  catalog=mergeTournamentCatalog([...catalog,{id,...meta}]);toast(info.catalogId?'Turnierdaten gespeichert.':'Neues Turnier angelegt.');
+}
+async function archiveCurrentTournament(){
+  const meta=currentTournament();if(!board()||!meta||state?.phase!=='complete'||isReadOnly())return;
+  await task(async()=>{const {id,...info}=meta;info.archived=true;if(demo)saveDemoCatalog(info,id);else await cloud.saveTournamentInfo(id,info);catalog=mergeTournamentCatalog([...catalog,{id,...info}]);gameFilter='done';},'Turnier ins Archiv übernommen.');
+}
+function boardTournamentPanel(){const meta=currentTournament();return `<section class="panel board-tournament-panel"><h3>Vereinsturniere</h3><p>Aktuell ausgewählt: <b>${e(meta?.title??'Kein Turnier')}</b>. Die Benutzer-Teamzuordnung bezieht sich auf dieses Turnier.</p><div class="admin-actions">${btn('Turnierübersicht','show-tournaments')}${btn('Neues Turnier','tournament-new')}${meta&&!meta.archived?btn('Turnierdaten bearbeiten','tournament-edit'):''}${state?.phase==='complete'&&!isReadOnly()?btn('Abgeschlossenes Turnier archivieren','tournament-archive'):''}</div></section>`;}
+window.addEventListener('popstate',()=>{const id=new URL(location.href).searchParams.get('turnier')??'main',next=routeView();if(id!==selectedTournamentId&&catalog.some(t=>t.id===id))void chooseTournament(id).then(()=>{view=next;syncLocation();render(true);});else{view=next;render(true);}});
 function liveAppURL(){const url=new URL(location.href);url.search='';url.hash='';return url.href;}
 // Eigener Browserspeicher: Online-Demo schreibt niemals in den Live-Cache.
 function loadDemoState(){
-  try{const saved=JSON.parse(localStorage.getItem(DEMO_KEY));state=saved?validateBackup({format:'beerpong-v2',state:saved}):E.demoTournament();}
-  catch{state=E.demoTournament();}
+  try{const saved=JSON.parse(localStorage.getItem(DEMO_KEY));state=saved?validateBackup({format:'beerpong-v2',state:saved}):selectedTournamentId==='main'?E.demoTournament():{...E.emptyTournament(),title:currentTournament()?.title??'BEERPONG'};}
+  catch{state=selectedTournamentId==='main'?E.demoTournament():{...E.emptyTournament(),title:currentTournament()?.title??'BEERPONG'};}
   localStorage.setItem(DEMO_KEY,JSON.stringify(state));
 }
 // Die echte Firebase-Rolle prüft den Zugang; der Rollenwähler simuliert nur die Demo.
 function setDemoAccess(realRole){
   demoAccessRole=realRole;
   if(['admin','board'].includes(realRole)){
-    if(!demoAuthorized)loadDemoState();
+    if(!demoAuthorized){loadDemoCatalog();if(!currentTournament()||currentTournament().externalUrl)selectedTournamentId='main';updateDemoKey();loadDemoState();}
     if(!demoAuthorized||!demoRoles().includes(role)){role=realRole;teamId='';view='overview';if($('#dialog').open)$('#dialog').close();}
     demoAuthorized=true;demo=true;demoGateError='';
   }else{
@@ -65,6 +170,7 @@ function setDemoAccess(realRole){
 }
 function renderDemoGate(){
   document.body.classList.remove('online-demo');document.body.style.setProperty('--demo-toolbar-height','0px');
+  $('#tournament-context').hidden=true;$('#tournament-navigation').hidden=true;
   $('.tabs').hidden=true;$('#admin-tab').hidden=true;$('#board-tab').hidden=true;$('#phase-badge').hidden=true;$('#mode-banner').hidden=true;$('#mode-banner').innerHTML='';
   $('#connection').textContent='Online-Demo · Leitungszugang';$('#connection').classList.remove('online');
   $('#login-button').textContent=user&&!user.isAnonymous?'Konto ↗':'Anmelden ↗';
@@ -75,11 +181,16 @@ function updateDemoToolbarHeight(){const banner=$('#mode-banner');document.body.
 function render(force=false){
   if(onlineDemoRequested&&!demoAuthorized){renderDemoGate();return;}
   $('.tabs').hidden=false;
+  renderTournamentNavigation();
+  document.body.classList.toggle('archive-view',isReadOnly());
   $('#connection').textContent=demo?(onlineDemoRequested?'Online-Demo':'Lokale Demo'):synced&&navigator.onLine?'Live verbunden':'Verbindung unterbrochen';$('#connection').classList.toggle('online',!demo&&synced&&navigator.onLine);
   $('#login-button').textContent=user&&!user.isAnonymous?'Konto ↗':'Anmelden ↗';$('#admin-tab').hidden=!admin();$('#board-tab').hidden=!board();
-  if(view==='admin'&&!admin()||view==='board'&&!board())view='overview';
+  if(view==='admin'&&!admin()||['board','registrations','members','applications'].includes(view)&&!board())view='overview';
+  if(!board()||!['registrations','members'].includes(view))registryManagement.clear();
+  if(!['applications','profile'].includes(view))memberWorkflows.clear();
+  $('#profile-tab').hidden=!demo&&(!user||user.isAnonymous);
   document.querySelectorAll('[data-view]').forEach(b=>{if(b.dataset.view===view)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
-  const phase=state?E.LABELS[state.phase]:'';
+  const phase=['home','tournaments','rules','membership','board'].includes(view)?'':currentTournament()?.archived?'Archiv':state?E.LABELS[state.phase]:'';
   $('#phase-badge').textContent=phase??'';
   $('#phase-badge').hidden=!phase;
   $('#mode-banner').hidden=!demo&&synced&&navigator.onLine;
@@ -88,13 +199,27 @@ function render(force=false){
   // Live-Updates dürfen keine Unterschriften oder ungesendeten Antragsdaten löschen.
   renderPlayerCallout();
   updateDemoToolbarHeight();
+  if(view==='games'&&!currentTournament()?.externalUrl)view='overview';
+  if(!force&&view==='games'&&$('#archive-games-root')?.dataset.id===selectedTournamentId)return;
+  if(!force&&view==='registration'&&$('#registration-root')){if(currentTournament()?.archived||registrationEvent(selectedTournamentId)?.open&&!$('#tournament-registration-form')){render(true);return;}refreshRegistrationAvailability(currentTournament(),registrationEvent(selectedTournamentId));return;}
+  if(!force&&['registrations','members'].includes(view)&&$('#registry-management')){registryManagement.refresh();return;}
+  if(!force&&['applications','profile'].includes(view)&&$('#member-workflow-root'))return;
   if(!force&&view==='membership'&&$('#membership-root'))return;
   if(!force&&view==='rules'&&$('#document-selector'))return;
   const details=[...document.querySelectorAll('#main details[open][data-detail]')].map(d=>d.dataset.detail);
   const searchField=$('#search-form input'),draft=searchField?.value,focused=document.activeElement===searchField,selection=focused?[searchField.selectionStart,searchField.selectionEnd]:null;
+  if(view==='home'){$('#main').innerHTML=homeView(catalog,demo?Object.fromEntries(catalog.filter(t=>!t.archived).map(t=>[t.id,demoRegistry.getSettings(t.id)])):registrationSettings);return;}
+  if(view==='tournaments'){$('#main').innerHTML=tournamentsView(catalog,board());return;}
   if(view==='rules'){$('#main').innerHTML=rulesView();bindDocumentSearch();return;}
   if(view==='membership'){$('#main').innerHTML=membershipView();bindMembership({demo});bindDocumentSearch();return;}
   if(view==='board'){$('#main').innerHTML=boardView();return;}
+  if(['applications','profile'].includes(view)){$('#main').innerHTML='<div id="member-workflow-root"></div>';view==='applications'?void memberWorkflows.mountApplications():memberWorkflows.mountProfile();return;}
+  if(view==='registration'){$('#main').innerHTML=registrationView(currentTournament(),registrationEvent(selectedTournamentId),{demo});bindRegistration({submit:data=>(demo?demoRegistry:cloud).submitRegistration(selectedTournamentId,data),afterSubmit:()=>render()});return;}
+  if(['registrations','members'].includes(view)){$('#main').innerHTML=`<div class="section-head"><div><p class="eyebrow">GESCHÜTZTE VEREINSVERWALTUNG</p><h2>${view==='members'?'Mitglieder.':'Turnieranmeldungen.'}</h2></div></div><div id="registry-management"></div>`;void registryManagement.mount(view,selectedTournamentId);return;}
+  const meta=currentTournament();
+  if(!meta){$('#main').innerHTML=`<section class="empty"><h2>${catalogLoaded?'Turnier nicht gefunden.':'Turniere werden geladen …'}</h2><button class="button light" data-view="tournaments">Zur Turnierübersicht</button></section>`;return;}
+  if(meta.externalUrl){$('#main').innerHTML=externalArchiveView(meta,view);if(view==='games')bindArchiveGames(meta);return;}
+  if(isReadOnly()&&view==='admin'){view='overview';render(true);return;}
   if(!state){$('#main').innerHTML=`<div class="empty"><p class="eyebrow">BEREIT FÜR DEN ERSTEN WURF</p><h2>${synced?'Hier entsteht euer Turnier.':'Verbindung zum Turnier …'}</h2><p>${synced?'Die Spielleitung kann jetzt das Turnier anlegen.':'Für den Live-Spielplan wird eine Internetverbindung benötigt. Regelwerk und Mitgliedschaft sind unabhängig davon zugänglich.'}</p>${admin()?`<div class="admin-actions">${btn('Turnier anlegen','initialize')}${btn('Online-Demo öffnen ↗','open-demo')}</div>`:''}</div>`;return;}
   $('#main').innerHTML=({overview:overviewView,groups:groupsView,bracket:bracketView,teams:teamsView,admin:adminView})[view]();
   for(const d of document.querySelectorAll('#main details[data-detail]'))if(details.includes(d.dataset.detail))d.open=true;
@@ -114,7 +239,7 @@ function overviewView(){
   if(ownOnly&&teamId)filtered=filtered.filter(m=>[m.a,m.b].includes(teamId));
   if(search)filtered=filtered.filter(m=>`${team(m.a)?.name} ${team(m.b)?.name}`.toLocaleLowerCase('de').includes(search.toLocaleLowerCase('de')));
   const visibleTables=Math.max(state.tableCount,...current.filter(m=>!state.results[m.id]&&m.status==='playing').map(m=>m.table));
-  return `${podium()}<div class="section-head"><div><p class="eyebrow">ALLES IM BLICK</p><h2>Euer Turnier. Wurf für Wurf.</h2><p>${e(E.LABELS[state.phase])} · Fortlaufende Tischvergabe ohne Spieltage</p></div><span class="tag ${synced?'live':''}">${demo?'DEMO':synced?'LIVE':'OFFLINE'}</span></div>${teamId?`<div class="own-banner">Du spielst für ${name(teamId)}. ${btn('Meine Spiele','my-games')}</div>${role==='player'&&!state.allowSelfScoring?'<p class="legend">Die Selbsteingabe ist derzeit gesperrt. Bitte melde Ergebnisse der Spielleitung.</p>':''}`:''}<div class="stats"><div class="stat"><strong>${state.teams.length}<small>/32</small></strong><span>Teams am Start</span></div><div class="stat"><strong>8</strong><span>Gruppen</span></div><div class="stat"><strong>${done}<small>/64</small></strong><span>Spiele beendet</span></div><div class="stat"><strong>${E.activeTables(state)}<small>/${state.tableCount}</small></strong><span>Tische bespielbar</span></div></div>${state.phase!=='setup'&&state.phase!=='complete'?`<div class="progress-line" role="progressbar" aria-label="Phasenfortschritt" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div><div class="progress-meta"><span>${e(E.LABELS[state.phase])}</span><span>${phaseDone} von ${current.length} Spielen</span></div>`:''}<div class="panel-head"><h3>An den Tischen</h3><span class="legend">${open.length} Spiele offen</span></div><div class="table-status-legend" aria-label="Tischstatus-Farben"><span class="table-status status-open">Rot: Teams zum Tisch</span><span class="table-status status-preparing">Gelb: Aufbau</span><span class="table-status status-playing">Grün: Spiel läuft</span></div><div class="grid tables-grid">${Array.from({length:visibleTables},(_,i)=>tableCard(i+1)).join('')}</div><div class="two-column"><section class="panel"><div class="panel-head"><h3>Spielplan</h3><span class="tag">${filtered.length} SPIELE</span></div><div class="filter-bar"><label><span class="filters-label">Spiele</span><select id="game-filter">${[['open','Aktuelle, offene'],['done','Beendete Spiele'],['all','Alle Spiele']].map(([v,l])=>`<option value="${v}" ${gameFilter===v?'selected':''}>${l}</option>`).join('')}</select></label><label><span class="filters-label">Tisch</span><select id="table-filter"><option value="all">Alle Tische</option><option value="0" ${tableFilter==='0'?'selected':''}>Ohne Tisch</option>${Array.from({length:visibleTables},(_,i)=>`<option value="${i+1}" ${tableFilter===String(i+1)?'selected':''}>Tisch ${i+1}</option>`).join('')}</select></label></div>${teamId?`<label class="checkbox-label own-filter"><input id="own-filter" type="checkbox" ${ownOnly?'checked':''}>Nur meine Spiele</label>`:''}<form id="search-form" class="filter-bar"><label><span class="filters-label">Team suchen</span><input type="search" name="search" maxlength="60" value="${e(search)}" placeholder="Teamname …"></label><button type="submit" class="button light" style="align-self:end">Suchen</button></form>${filtered.slice(0,matchLimit).map(m=>matchCard(m)).join('')||'<div class="empty"><p>Hier sind gerade keine Spiele.</p></div>'}${filtered.length>matchLimit?`<div class="admin-actions">${btn(`Weitere Spiele (${filtered.length-matchLimit})`,'more-games')}</div>`:''}</section><aside><section class="panel"><h3>Zuletzt abgeräumt</h3>${recent.map(m=>matchCard(m,true)).join('')||'<p class="legend">Die ersten Ergebnisse erscheinen hier.</p>'}</section><div class="notice">Sieg: <b>3 Punkte</b>, Niederlage: <b>0 Punkte</b>. Nach Verlängerung zählen <b>0 Restbecher beim Sieger und 1 beim Verlierer</b>. Sonst zählt die Anzahl übriger Becher des Verlierers für die Differenz.</div></aside></div>`;
+  return `${podium()}<div class="section-head"><div><p class="eyebrow">ALLES IM BLICK</p><h2>${e(currentTournament()?.title??state.title)}</h2><p>${e(E.LABELS[state.phase])} · Fortlaufende Tischvergabe ohne Spieltage</p></div><span class="tag ${synced?'live':''}">${demo?'DEMO':synced?'LIVE':'OFFLINE'}</span></div>${teamId?`<div class="own-banner">Du spielst für ${name(teamId)}. ${btn('Meine Spiele','my-games')}</div>${role==='player'&&!state.allowSelfScoring?'<p class="legend">Die Selbsteingabe ist derzeit gesperrt. Bitte melde Ergebnisse der Spielleitung.</p>':''}`:''}<div class="stats"><div class="stat"><strong>${state.teams.length}<small>/32</small></strong><span>Teams am Start</span></div><div class="stat"><strong>8</strong><span>Gruppen</span></div><div class="stat"><strong>${done}<small>/64</small></strong><span>Spiele beendet</span></div><div class="stat"><strong>${E.activeTables(state)}<small>/${state.tableCount}</small></strong><span>Tische bespielbar</span></div></div>${state.phase!=='setup'&&state.phase!=='complete'?`<div class="progress-line" role="progressbar" aria-label="Phasenfortschritt" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div><div class="progress-meta"><span>${e(E.LABELS[state.phase])}</span><span>${phaseDone} von ${current.length} Spielen</span></div>`:''}<section class="live-tables"><div class="panel-head"><h3>An den Tischen</h3><span class="legend">${open.length} Spiele offen</span></div><div class="table-status-legend" aria-label="Tischstatus-Farben"><span class="table-status status-open">Rot: Teams zum Tisch</span><span class="table-status status-preparing">Gelb: Aufbau</span><span class="table-status status-playing">Grün: Spiel läuft</span></div><div class="grid tables-grid">${Array.from({length:visibleTables},(_,i)=>tableCard(i+1)).join('')}</div></section><div class="two-column"><section class="panel"><div class="panel-head"><h3>Spielplan</h3><span class="tag">${filtered.length} SPIELE</span></div><div class="filter-bar"><label><span class="filters-label">Spiele</span><select id="game-filter">${[['open','Aktuelle, offene'],['done','Beendete Spiele'],['all','Alle Spiele']].map(([v,l])=>`<option value="${v}" ${gameFilter===v?'selected':''}>${l}</option>`).join('')}</select></label><label><span class="filters-label">Tisch</span><select id="table-filter"><option value="all">Alle Tische</option><option value="0" ${tableFilter==='0'?'selected':''}>Ohne Tisch</option>${Array.from({length:visibleTables},(_,i)=>`<option value="${i+1}" ${tableFilter===String(i+1)?'selected':''}>Tisch ${i+1}</option>`).join('')}</select></label></div>${teamId?`<label class="checkbox-label own-filter"><input id="own-filter" type="checkbox" ${ownOnly?'checked':''}>Nur meine Spiele</label>`:''}<form id="search-form" class="filter-bar"><label><span class="filters-label">Team suchen</span><input type="search" name="search" maxlength="60" value="${e(search)}" placeholder="Teamname …"></label><button type="submit" class="button light" style="align-self:end">Suchen</button></form>${filtered.slice(0,matchLimit).map(m=>matchCard(m)).join('')||'<div class="empty"><p>Hier sind gerade keine Spiele.</p></div>'}${filtered.length>matchLimit?`<div class="admin-actions">${btn(`Weitere Spiele (${filtered.length-matchLimit})`,'more-games')}</div>`:''}</section><aside><section class="panel"><h3>Zuletzt abgeräumt</h3>${recent.map(m=>matchCard(m,true)).join('')||'<p class="legend">Die ersten Ergebnisse erscheinen hier.</p>'}</section><div class="notice">Sieg: <b>3 Punkte</b>, Niederlage: <b>0 Punkte</b>. Nach Verlängerung zählen <b>0 Restbecher beim Sieger und 1 beim Verlierer</b>. Sonst zählt die Anzahl übriger Becher des Verlierers für die Differenz.</div></aside></div>`;
 }
 function tableCard(n){
   const queue=E.tableQueue(state,n),active=E.activeAtTable(state,n),status=E.tableStatus(state,n);
@@ -126,7 +251,7 @@ function tableNextGames(queue,active){
 }
 function renderPlayerCallout(){
   const dock=$('#player-callout');if(!dock)return;
-  const info=role==='player'?E.teamTableInfo(state,teamId):{current:null,upcoming:[]};
+  const info=role==='player'&&!isReadOnly()?E.teamTableInfo(state,teamId):{current:null,upcoming:[]};
   const current=info.current&&['open','preparing'].includes(info.current.status)?info.current:null,m=current??info.upcoming[0];
   if(!m){dock.hidden=true;dock.innerHTML='';playerCalloutMarkup='';document.body.style.setProperty('--player-callout-space','0px');return;}
   const live=demo||synced&&navigator.onLine,urgent=m.status==='open',building=m.status==='preparing';
@@ -177,7 +302,7 @@ function openDialog(title,content,form='',data={},submitLabel='Speichern'){
 }
 function input(label,key,value='',type='text',attrs=''){return `<label>${label}<input name="${key}" type="${type}" value="${e(value)}" ${attrs}></label>`;}
 function confirmation(title,text,action,data={}){openDialog(title,`<p>${text}</p><div class="dialog-actions"><button class="button light" data-action="close">Abbrechen</button><button class="button red-button" data-action="confirmed" data-id="${action}">Bestätigen</button></div>`,'',data);}
-function roleFields(r='player',id=''){return `<label>Rolle<select name="role" id="account-role"><option value="player" ${r==='player'?'selected':''}>Mitspieler</option><option value="admin" ${r==='admin'?'selected':''}>Spielleitung</option>${board()?`<option value="board" ${r==='board'?'selected':''}>Vorstand</option>`:''}<option value="guest" ${r==='guest'?'selected':''}>Zuschauer (Schreibrechte entziehen)</option></select></label><label id="account-team-label" ${r!=='player'?'hidden':''}>Team des Mitspielers<select name="teamId" id="account-team" ${r==='player'?'required':''}><option value="">Bitte Team wählen</option>${(state?.teams??[]).map(t=>`<option value="${e(t.id)}" ${id===t.id?'selected':''}>${e(t.name)}</option>`).join('')}</select></label>`;}
+function roleFields(r='player',id=''){return `<p class="notice">Teamzuordnung für: <b>${e(currentTournament()?.title??selectedTournamentId)}</b>. Benutzerkonten gelten für den ganzen Verein.</p><label>Rolle<select name="role" id="account-role"><option value="player" ${r==='player'?'selected':''}>Mitspieler</option><option value="admin" ${r==='admin'?'selected':''}>Spielleitung</option>${board()?`<option value="board" ${r==='board'?'selected':''}>Vorstand</option>`:''}<option value="guest" ${r==='guest'?'selected':''}>Zuschauer (Schreibrechte entziehen)</option></select></label><label id="account-team-label" ${r!=='player'?'hidden':''}>Team des Mitspielers<select name="teamId" id="account-team" ${r==='player'?'required':''}><option value="">Bitte Team wählen</option>${(state?.teams??[]).map(t=>`<option value="${e(t.id)}" ${id===t.id?'selected':''}>${e(t.name)}</option>`).join('')}</select></label>`;}
 function scoreDialog(id){
   const m=E.match(state,id);if(!canScore(m))return toast('Für dieses Spiel hast du keine Eingabeberechtigung oder die Selbsteingabe ist gesperrt.');
   const r=state.results[id],reset=admin()&&E.PHASES.indexOf(m.phase)<E.PHASES.indexOf(state.phase);
@@ -189,12 +314,18 @@ function teamDialog(id){const t=team(id)??{id:crypto.randomUUID(),name:'',p1:'',
 
 document.addEventListener('click',event=>{
   const b=event.target.closest('[data-view],[data-action]');if(!b||b.disabled)return;
-  if(b.dataset.view){view=b.dataset.view;render(true);return;}
+  if(b.dataset.view){navigateView(b.dataset.view);return;}
   if(busy&&b.dataset.action!=='close')return;
   try{handleAction(b.dataset.action,b.dataset.id);}catch(error){toast(humanError(error));}
 });
 function handleAction(action,id){
   switch(action){
+    case 'register-team':void chooseTournament(id).then(()=>{view='registration';syncLocation(true);render(true);});break;
+    case 'show-tournaments':navigateView('tournaments');break;
+    case 'tournament-select':void chooseTournament(id);break;
+    case 'tournament-new':if(board())tournamentDialog();break;
+    case 'tournament-edit':if(board()&&currentTournament())tournamentDialog(currentTournament());break;
+    case 'tournament-archive':if(board()&&state?.phase==='complete'&&!isReadOnly()&&confirm('Dieses abgeschlossene Turnier dauerhaft ins Archiv übernehmen? Der Spielplan wird danach nur noch lesbar sein.'))void archiveCurrentTournament();break;
     case 'close':$('#dialog').close();break;
     case 'filter-group':groupFilter=id;render();break;
     case 'filter-round':roundFilter=id;render();break;
@@ -208,14 +339,14 @@ function handleAction(action,id){
     case 'score':scoreDialog(id);break;
     case 'open-demo':if(!demo&&admin()){const url=new URL(liveAppURL());url.searchParams.set('demo','1');window.open(url.href,'_blank','noopener,noreferrer');}break;
     case 'login':
-      if(demo)return openDialog('Demo ausprobieren',`<p>Im gelben Banner kannst du Rollen und eigenes Team testen. Änderungen betreffen nur die Beispieldaten dieses Browsers. Konten und Mitgliedsanträge sind in der Demo deaktiviert.</p>${onlineDemoRequested?`<a class="button light" href="${e(liveAppURL())}">Zum Live-Turnier</a>`:''}`);
+      if(demo)return openDialog('Demo ausprobieren',`<p>Im gelben Banner kannst du Rollen und eigenes Team testen. Änderungen betreffen nur die Beispieldaten dieses Browsers. Echte Konten, PDF-Abgaben und E-Mails sind in der Demo gesperrt. Im Vorstandsbereich lässt sich die Mitgliederaufnahme mit einem erfundenen Antrag testen.</p>${onlineDemoRequested?`<a class="button light" href="${e(liveAppURL())}">Zum Live-Turnier</a>`:''}`);
       if(onlineDemoRequested&&user&&!user.isAnonymous)return openDialog('Leitungszugang erforderlich',`<p>Angemeldet: ${e(user.email)}. Für die Online-Demo wird die Rolle „Spielleitung“ oder „Vorstand“ benötigt. Konto und Passwort verwaltest du im Live-Turnier.</p><a class="button light" href="${e(liveAppURL())}">Zum Live-Turnier</a>`);
       if(user&&!user.isAnonymous)return openDialog('Dein Konto',`<p>${e(user.email)} · ${roleLabel(role)}</p>${teamId?`<p>Dein Team: ${name(teamId)}</p>`:''}<p class="legend">UID: ${e(user.uid)}</p>${role==='guest'?'<p>Der Vorstand kann dir Rolle und Team zuweisen.</p>':''}<div class="admin-actions">${btn('Passwort ändern','password-change')}<button class="button" data-action="logout">Abmelden</button></div><p class="legend">Passwörter sind weder für Spielleitung noch Vorstand einsehbar.</p>`);
       openDialog('Willkommen zurück.',`${input('E-Mail','email','','email','required autocomplete="username"')}${input('Passwort','password','','password','required autocomplete="current-password"')}<button type="button" class="text-button" data-action="password-reset">Passwort vergessen?</button><p>Nutze deine E-Mail-Adresse und dein selbst festgelegtes Passwort. Neue Nutzer erhalten einen Passwortlink. Zuschauer benötigen kein Konto.</p>`,'login',{},'Anmelden');break;
     case 'password-change':if(demo)return toast('Echte Passwörter werden in der Demo nicht geändert.');if(user&&!user.isAnonymous)openDialog('Passwort ändern',`${input('Aktuelles Passwort','currentPassword','','password','required autocomplete="current-password"')}${input('Neues Passwort','newPassword','','password','required minlength="8" autocomplete="new-password"')}${input('Neues Passwort wiederholen','repeatPassword','','password','required minlength="8" autocomplete="new-password"')}`,'password-change',{},'Passwort ändern');break;
     case 'password-reset':if(demo)return toast('Echte E-Mails werden in der Demo nicht versendet.');openDialog('Passwort zurücksetzen',`${input('Deine E-Mail','email','','email','required autocomplete="email"')}<p>Du erhältst einen Link zum Festlegen eines neuen Passworts, sofern ein passendes Konto besteht.</p>`,'password-reset',{},'Link anfordern');break;
     case 'logout':if(demo)return toast('Zum Abmelden bitte zum Live-Turnier wechseln.');task(()=>cloud.logout(),'Abgemeldet.');break;
-    case 'initialize':task(()=>adminCommit(()=>E.emptyTournament()),'Turnier angelegt.');break;
+    case 'initialize':task(()=>adminCommit(()=>({...E.emptyTournament(),title:currentTournament().title})),'Turnier angelegt.');break;
     case 'team-add':if(admin()&&state.teams.length<32)teamDialog();break;
     case 'team-edit':if(admin())teamDialog(id);break;
     case 'team-delete':confirmation('Team entfernen?',`${name(id)} wird aus der Vorbereitung entfernt.`,'delete-team',{teamId:id});break;
@@ -223,7 +354,7 @@ function handleAction(action,id){
     case 'reset':confirmation('Turnier zurücksetzen – Schritt 1 von 2','Alle Ergebnisse, Paarungen, Tischwarteschlangen und Tischzeitpläne werden gelöscht. Teams, Gruppen und Benutzer bleiben erhalten. Vorher eine Sicherung herunterladen.','reset-first');break;
     case 'shuffle':confirmation('Gruppen neu auslosen?','Die 32 Teams werden neu auf A–H verteilt. Vorhandene Gruppenzuordnungen werden ersetzt.','shuffle');break;
     case 'slots':task(()=>adminCommit(s=>{if(s.phase!=='setup'||s.teams.length)throw new Error('Nur in einer leeren Vorbereitung möglich.');return{...s,teams:Array.from({length:32},(_,i)=>({id:crypto.randomUUID(),name:`Team ${String(i+1).padStart(2,'0')}`,p1:'',p2:'',group:''}))};}),'32 unzugeordnete Teamplätze angelegt.',false);break;
-    case 'settings':openDialog('Tische jetzt einstellen',`${input('Turniername','title',state.title,'text','required maxlength="60"')}${input('Vorhandene, nummerierte Tische','tableCount',state.tableCount,'number','required min="1" max="32"')}${input('Davon jetzt bespielbar (ab Tisch 1)','activeTableCount',E.activeTables(state),'number','required min="0" max="32"')}<p>Bei 3 bespielbaren Tischen bleiben Tisch 1–3 aktiv. Laufende Spiele auf höheren Nummern laufen zu Ende. 0 pausiert die Vergabe an allen Tischen.</p>`,'settings');break;
+    case 'settings':openDialog('Tische jetzt einstellen',`${input('Vorhandene, nummerierte Tische','tableCount',state.tableCount,'number','required min="1" max="32"')}${input('Davon jetzt bespielbar (ab Tisch 1)','activeTableCount',E.activeTables(state),'number','required min="0" max="32"')}<p>Bei 3 bespielbaren Tischen bleiben Tisch 1–3 aktiv. Laufende Spiele auf höheren Nummern laufen zu Ende. 0 pausiert die Vergabe an allen Tischen.</p>`,'settings');break;
     case 'table-plan':openDialog('Tischanzahl nach Uhrzeit umstellen',`${input('Bespielbare Tische ab diesem Zeitpunkt','count',E.activeTables(state),'number',`required min="0" max="${state.tableCount}"`)}${input('Datum und Uhrzeit dieses Geräts','when','','datetime-local','required')}<p>Ab dem Zeitpunkt erhalten höhere Tischnummern keine neuen Spiele mehr. Laufende Spiele können zu Ende gespielt werden. Die Systemuhren der Geräte müssen stimmen.</p>`,'table-plan');break;
     case 'cancel-plan':task(()=>adminCommit(s=>E.cancelTablePlan(s,id)),'Zeitplan entfernt.',false);break;
     case 'assign':{const m=E.match(state,id);openDialog('Tisch zuweisen',`<p>${name(m.a)} gegen ${name(m.b)}</p><label>Zuweisung<select name="table"><option value="auto">Automatisch nächster freier Tisch</option><option value="0" ${m.held?'selected':''}>Zurückstellen, vorerst nicht automatisch zuweisen</option>${Array.from({length:E.activeTables(state)},(_,i)=>`<option value="${i+1}" ${m.table===i+1?'selected':''}>Tisch ${i+1} · ${statusLabels[E.tableStatus(state,i+1)]}</option>`).join('')}</select></label><p>Auch belegte Tische sind möglich. Das Spiel wird dort vorgemerkt und bei Verfügbarkeit als offen zugewiesen. Die Spielleitung setzt es bei Aufbau auf „In Vorbereitung“ und bei Beginn auf „Wird bespielt“. Beim Umsetzen wird die Partie wieder als offen eingeordnet.</p>`,'assign',{id});break;}
@@ -231,14 +362,14 @@ function handleAction(action,id){
     case 'decision':{const rows=E.standings(state,id);openDialog(`Gleichstand in Gruppe ${id}`,`<p>Nur nach allen Kriterien gleiche Teams dürfen untereinander getauscht werden.</p>${rows.map((t,i)=>`<label>Platz ${i+1}<select name="place${i}">${rows.map(x=>`<option value="${e(x.id)}" ${x.id===t.id?'selected':''}>${e(x.name)}${x.tied?' *':''}</option>`).join('')}</select></label>`).join('')}${input('Öffentliche Begründung','reason','','text','required minlength="3" maxlength="200"')}`,'decision',{group:id});break;}
     case 'account-invite':if(!demo&&board()){const recipient=users.find(u=>u.uid===id);if(recipient)task(()=>cloud.inviteAccount(recipient.email),'Passwortlink angefordert.',false);}break;
     case 'account-add':if(!demo&&board())openDialog('Konto anlegen',`${input('Anzeigename','name','','text','required maxlength="80"')}${input('E-Mail','email','','email','required maxlength="254"')}${roleFields()}<p>Nach dem Anlegen wird eine Firebase-E-Mail mit Passwortlink angefordert. Der Empfänger legt vor seiner ersten Anmeldung sein eigenes Passwort fest. Bitte eine erreichbare E-Mail-Adresse verwenden.</p>`,'account');break;
-    case 'role-add':case 'role-edit':{if(demo||!board())return;const u=users.find(x=>x.uid===id);openDialog('Rolle und Team zuweisen',`${input('Firebase Authentication UID','uid',u?.uid??'','text',`required maxlength="128" ${u?'readonly':''}`)}${input('Anzeigename','name',u?.name??'','text','required maxlength="80"')}${input('E-Mail','email',u?.email??'','email','required maxlength="254"')}${roleFields(u?.role??'player',u?.teamId??'')}`,'role');break;}
+    case 'role-add':case 'role-edit':{if(demo||!board())return;const u=users.find(x=>x.uid===id);if(u?.role==='player'&&(u.tournamentId??'main')!==selectedTournamentId){void chooseTournament(u.tournamentId??'main',true);toast('Zuerst das zugeordnete Turnier geöffnet. Bitte den Benutzer erneut bearbeiten.');return;}openDialog('Rolle und Team zuweisen',`${input('Firebase Authentication UID','uid',u?.uid??'','text',`required maxlength="128" ${u?'readonly':''}`)}${input('Anzeigename','name',u?.name??'','text','required maxlength="80"')}${input('E-Mail','email',u?.email??'','email','required maxlength="254"')}${roleFields(u?.role??'player',u?.teamId??'')}`,'role');break;}
     case 'export':{const blob=new Blob([JSON.stringify({format:'beerpong-v2',exportedAt:new Date().toISOString(),state},null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`beerpong-${localDate()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);break;}
     case 'restore':openDialog('Sicherung wiederherstellen','<div class="notice error">Ersetzt den gesamten Turnierstand einschließlich Teams. Benutzerkonten und Rollen bleiben erhalten. Nach einer Wiederherstellung die Teamzuordnungen prüfen.</div><label>JSON-Sicherung v2<input name="backup" type="file" accept=".json,application/json" required></label><label class="checkbox-label"><input type="checkbox" name="confirm" required>Gesamten Turnierstand ersetzen</label>','restore');break;
     case 'import':openDialog('Teams als CSV importieren','<p>UTF-8, Semikolon als Trennzeichen. Kopfzeile: <b>Team;Person 1;Person 2;Gruppe</b>. Die Gruppe darf leer sein; 1–32 Teams. Ersetzt die bisherigen Teams in der Vorbereitung.</p><label>CSV-Datei<input type="file" name="csv" accept=".csv,text/csv" required></label>','import');break;
     case 'demo-reset':confirmation('Demo neu laden?','Ersetzt nur die lokalen Beispieldaten.','demo-reset');break;
     case 'confirmed':performConfirmed(id);break;
     case 'rules':view='rules';render(true);break;
-    case 'membership-inbox':void openMembershipInbox();break;
+    case 'membership-inbox':navigateView('applications');break;
     case 'membership-download-all':void downloadMemberships();break;
     case 'membership-download':if(board())downloadPrivatePDF(privateApplications.find(a=>a.id===id));break;
     case 'membership-delete':if(board()&&confirm('Diesen Mitgliedsantrag endgültig löschen?'))void cloud.deleteMembership(id).then(openMembershipInbox).catch(error=>toast(humanError(error)));break;
@@ -258,6 +389,7 @@ function performConfirmed(action){
 }
 document.addEventListener('change',event=>{
   const target=event.target;
+  if(target.id==='tournament-selector'){void chooseTournament(target.value,view==='board');return;}
   if(target.id==='demo-role'&&demo){if(!demoRoles().includes(target.value)){render();return;}role=target.value;teamId=role==='player'?(state?.teams[0]?.id??''):'';render();}
   if(target.id==='demo-team'&&demo){teamId=target.value;render();}
   if(target.id==='game-filter'){gameFilter=target.value;matchLimit=12;render();}
@@ -274,17 +406,18 @@ document.addEventListener('submit',event=>{
   event.preventDefault();const form=event.target,formData=new FormData(form),data=Object.fromEntries(formData),queueIds=formData.getAll('queueIds'),kind=form.dataset.form,info={...modal};
   task(async()=>{
     if(demo&&['login','account','role','password-change','password-reset'].includes(kind))throw new Error('Echte Kontovorgänge sind in der Demo deaktiviert.');
+    if(kind==='tournament'){await saveTournamentForm(data,info);return;}
     if(kind==='login')return cloud.login(data.email,data.password);
     if(kind==='password-change'){if(data.newPassword!==data.repeatPassword)throw new Error('Die neuen Passwörter stimmen nicht überein.');await cloud.changePassword(data.currentPassword,data.newPassword);form.reset();return;}
     if(kind==='password-reset'){await cloud.resetPassword(data.email);return;}
     if(kind==='score')return commit(s=>{const m=s.matches[info.id];if(!(admin()||(role==='player'&&s.allowSelfScoring&&m?.phase===s.phase&&[m.a,m.b].includes(teamId))))throw new Error('Keine Berechtigung für dieses Spiel.');const needsReset=admin()&&E.PHASES.indexOf(m.phase)<E.PHASES.indexOf(s.phase);if(needsReset&&(!info.reset||data.confirm!=='on'))throw new Error('Inzwischen wurde eine Folgerunde gestartet. Bitte den Dialog erneut öffnen.');return E.recordResult(s,info.id,{winner:data.winner,cups:data.overtime==='on'?1:Number(data.cups),overtime:data.overtime==='on'},admin());},{id:info.id,baseline:info.baseline,match:info.match});
-    if(kind==='account'||kind==='role'){if(!board())throw new Error('Die Benutzerverwaltung ist dem Vorstand vorbehalten.');if(data.role==='player'&&!state?.teams.some(t=>t.id===data.teamId))throw new Error('Bitte ein vorhandenes Team wählen.');return kind==='account'?cloud.createAccount(data):cloud.setRole(data.uid,data);}
+    if(kind==='account'||kind==='role'){if(!board())throw new Error('Die Benutzerverwaltung ist dem Vorstand vorbehalten.');if(data.role==='player'&&!state?.teams.some(t=>t.id===data.teamId))throw new Error('Bitte ein vorhandenes Team wählen.');data.tournamentId=selectedTournamentId;return kind==='account'?cloud.createAccount(data):cloud.setRole(data.uid,data);}
     if(kind==='restore'){const file=new FormData(form).get('backup');if(file.size>800000)throw new Error('Die Sicherung ist zu groß.');const restored=validateBackup(JSON.parse(await file.text()));return adminCommit(()=>restored,info.revision);}
     if(kind==='import'){const file=new FormData(form).get('csv');if(file.size>100000)throw new Error('Die CSV-Datei ist zu groß.');const teams=parseTeamsCSV(await file.text());return adminCommit(s=>{if(s.phase!=='setup')throw new Error('Import nur vor Turnierstart möglich.');return{...s,teams};},info.revision);}
     return adminCommit(s=>{
       if(kind==='reset-final'){if(data.resetText!=='ZURÜCKSETZEN')throw new Error('Bestätigung stimmt nicht.');return E.resetTournament(s);}
       if(kind==='team'){const next=E.clone(s),existing=next.teams.find(t=>t.id===info.teamId);if(!existing&&(s.phase!=='setup'||s.teams.length>=32))throw new Error('Neue Teams nur vor Turnierstart, maximal 32.');const t={id:info.teamId,name:data.name.trim(),p1:data.p1.trim(),p2:data.p2.trim(),group:existing?.group??''};if(!t.name||!t.p1||!t.p2)throw new Error('Bitte Namen und beide Personen eintragen.');if(s.teams.some(x=>x.id!==t.id&&x.name.toLocaleLowerCase('de')===t.name.toLocaleLowerCase('de')))throw new Error('Diesen Teamnamen gibt es bereits.');if(existing)Object.assign(existing,t);else next.teams.push(t);return next;}
-      if(kind==='settings'){const next=E.configureTables(s,Number(data.tableCount),Number(data.activeTableCount));next.title=data.title.trim();if(!next.title)throw new Error('Bitte einen Turniernamen angeben.');return next;}
+      if(kind==='settings'){const next=E.configureTables(s,Number(data.tableCount),Number(data.activeTableCount));return next;}
       if(kind==='table-plan')return E.planTables(s,Number(data.count),data.when);
       if(kind==='assign')return data.table==='auto'?E.releaseMatch(s,info.id):E.assignTable(s,info.id,Number(data.table));
       if(kind==='table')return E.queueAtTable(E.setTableStatus(s,info.table,data.status),info.table,queueIds);
@@ -304,12 +437,17 @@ window.addEventListener('storage',event=>{if(demo&&event.key===DEMO_KEY&&event.n
 let dispatchTick='';
 setInterval(()=>{if(state&&E.tablePlans(state).length){const tick=JSON.stringify([state.revision,E.activeTables(state),E.tablePlans(state).map(p=>p.status)]);if(tick!==dispatchTick){dispatchTick=tick;render();}}},1000);
 async function start(){
+  loadClubArchive().then(()=>{if(currentTournament()?.externalUrl)render(true);}).catch(()=>{/* Der Originalspielplan bleibt als Link erreichbar. */});
   loadDocuments().then(()=>{if(view==='rules')render(true);if(view==='membership'&&$('#document-pages'))$('#document-pages').innerHTML=documentPages('statutes');}).catch(error=>toast(humanError(error)));
-  if(localDemo){loadDemoState();render();}
-  else if(onlineDemoRequested){render();try{await cloud.connect({demoGate:true,onState:()=>{},onUsers:()=>{},onConnection:()=>{},onUser:u=>{user=u;render();},onRole:r=>{setDemoAccess(r);},onError:error=>{demoGateError=humanError(error);if(error.code==='permission-denied')setDemoAccess('guest');else render();}});}catch(error){demoGateError=humanError(error);render();}}
-  else{try{const saved=JSON.parse(localStorage.getItem(cloud.liveCacheKey));if(saved?.schema===2)state=validateBackup({format:'beerpong-v2',state:saved});}catch{/* Cache ist nur Lesehilfe */}render();try{await cloud.connect({onState:s=>{if(s&&s.schema!==2){toast('Dieser Turnierstand stammt aus einer älteren Version. Bitte die Spielleitung kontaktieren.');return;}state=s;try{if(s)localStorage.setItem(cloud.liveCacheKey,JSON.stringify(s));else localStorage.removeItem(cloud.liveCacheKey);}catch{/* voller lokaler Speicher */}render();},onUser:u=>{user=u;render();},onRole:(r,id)=>{if(r!=='board'){privateApplications=[];if($('#dialog-title')?.textContent==='Mitgliedsanträge'||['account','role'].includes($('#modal-form')?.dataset.form))$('#dialog').close();}role=r;teamId=r==='player'?id:'';render();},onUsers:list=>{users=list;render();},onConnection:connected=>{synced=connected;render();},onError:error=>toast(humanError(error))});}catch(error){toast(`Firebase konnte nicht geladen werden: ${humanError(error)}`);}}
+  if(localDemo){loadDemoCatalog();updateDemoKey();if(!currentTournament()?.externalUrl)loadDemoState();render();}
+  else if(onlineDemoRequested){render();try{await cloud.connect({demoGate:true,onState:()=>{},onUsers:()=>{},onConnection:()=>{},onUser:u=>{if(user?.uid!==u?.uid){memberWorkflows.clear();if(view==='profile')$('#main').replaceChildren();}user=u;render();},onRole:r=>setDemoAccess(r),onError:error=>{demoGateError=humanError(error);if(error.code==='permission-denied')setDemoAccess('guest');else render();}});}catch(error){demoGateError=humanError(error);render();}}
+  else{
+    readStateCache();render();
+    try{const connectedTournamentId=currentTournament()?.externalUrl?'main':selectedTournamentId;await cloud.connect({initialTournamentId:connectedTournamentId,onCatalog:rows=>{catalog=mergeTournamentCatalog(rows);catalogLoaded=true;render();},onRegistrationSettings:rows=>{registrationSettings=rows;render();},onState:(s,sourceId)=>{if(sourceId&&sourceId!==selectedTournamentId)return;if(currentTournament()?.externalUrl)return;if(s&&s.schema!==2){toast('Dieser Turnierstand hat ein unbekanntes Format.');return;}state=s;try{if(s)localStorage.setItem(stateCacheKey(),JSON.stringify(s));else localStorage.removeItem(stateCacheKey());}catch{}render();},onUser:u=>{if(user?.uid!==u?.uid){memberWorkflows.clear();if(view==='profile')$('#main').replaceChildren();}user=u;render();},onRole:(r,id,tid='main')=>{if(r!=='board'){registryManagement.clear();privateApplications=[];if($('#dialog-title')?.textContent==='Mitgliedsanträge'||['account','role'].includes($('#modal-form')?.dataset.form))$('#dialog').close();}role=r;assignedTeamId=id;assignedTournamentId=tid;refreshOwnTeam();render();},onUsers:list=>{users=list;render();},onConnection:connected=>{synced=connected;render();},onError:error=>toast(humanError(error))});cloudReady=true;if(currentTournament()?.externalUrl)cloud.selectTournament(null);else if(selectedTournamentId!==connectedTournamentId)cloud.selectTournament(selectedTournamentId);}catch(error){toast(`Firebase konnte nicht geladen werden: ${humanError(error)}`);}
+  }
   if('serviceWorker'in navigator&&(location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname)))navigator.serviceWorker.register('./sw.js').catch(()=>toast('Die Offline-Ansicht konnte nicht eingerichtet werden.'));
 }
+
 start();
 
 
@@ -318,10 +456,10 @@ async function openMembershipInbox(){
   if(demo){toast('Der geschützte Eingang ist nur im Livebetrieb verfügbar.');return;}
   try{const received=await cloud.listMemberships();if(!board())return;privateApplications=received;openDialog('Mitgliedsanträge',`<p>${privateApplications.length} Anträge gespeichert. Diese Daten sind ausschließlich für den Vorstand sichtbar.</p><div class="admin-actions">${btn('Alle als eine PDF herunterladen','membership-download-all')}</div>${privateApplications.map(a=>`<div class="user-row"><div><b>${e(a.filename)}</b><small>${e(a.createdAt?.toDate().toLocaleString('de-DE')??'')}</small></div><button class="text-button" data-action="membership-download" data-id="${e(a.id)}">PDF</button><button class="text-button" data-action="membership-delete" data-id="${e(a.id)}">Löschen</button></div>`).join('')}`);}catch(error){toast(humanError(error));}
 }
-async function downloadMemberships(){
-  if(!board()||!privateApplications.length)return;
+async function downloadMemberships(items=privateApplications){
+  if(!board()||!items.length)return;
   try{const {PDFDocument}=await import('./vendor/pdf-lib.esm.min.js'),out=await PDFDocument.create();
-    for(const item of privateApplications){const input=await PDFDocument.load(item.pdf.toUint8Array());for(const p of await out.copyPages(input,input.getPageIndices()))out.addPage(p);}
+    for(const item of items){const input=await PDFDocument.load(item.pdf.toUint8Array());for(const p of await out.copyPages(input,input.getPageIndices()))out.addPage(p);}
     const url=URL.createObjectURL(new Blob([await out.save()],{type:'application/pdf'})),a=document.createElement('a');a.href=url;a.download='Beerpong-Academy-Mitgliedsantraege.pdf';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);
   }catch(error){toast(humanError(error));}
 }
@@ -330,5 +468,5 @@ document.querySelector('#dialog').addEventListener('close',()=>{privateApplicati
 
 function downloadPrivatePDF(item){if(!item)return;const url=URL.createObjectURL(new Blob([item.pdf.toUint8Array()],{type:'application/pdf'})),a=document.createElement('a');a.href=url;a.download=item.filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
 
-function accountManagementView(){return `<section class="panel"><h3>Benutzer & Teamzuordnung</h3>${demo?'<p class="notice">Echte Konten sind in der Demo deaktiviert. Oben lassen sich Rolle und eigenes Team testen.</p>':`<p class="legend">Mitspieler benötigen ein zugeordnetes Team. Mehrere Personen können demselben Team angehören.</p><div class="admin-actions">${btn('Konto anlegen','account-add')}${btn('Vorhandenes Konto zuweisen','role-add')}</div>${users.map(u=>`<div class="user-row"><div><b>${e(u.name)}</b><small>${e(u.email)} · ${roleLabel(u.role)}${u.teamId?` · ${e(team(u.teamId)?.name??'Team fehlt')}`:''}</small></div><button class="text-button" data-action="role-edit" data-id="${e(u.uid)}">Bearbeiten</button><button class="text-button" data-action="account-invite" data-id="${e(u.uid)}">Passwortlink senden</button></div>`).join('')}`}</section>`;}
-function boardView(){return `<div class="section-head"><div><p class="eyebrow">NUR FÜR DEN VORSTAND</p><h2>Vorstand.</h2><p>Geschützte Vereinsverwaltung.</p></div><span class="tag red-tag">VORSTAND</span></div><section class="panel demo-entry"><h3>Turnier ausprobieren</h3><p>${demo?'Du arbeitest mit lokalen Beispieldaten. Echte Konten und Anträge sind gesperrt.':'Teste den vollständigen Turnierablauf mit Beispieldaten in einem separaten Tab. Das Live-Turnier bleibt davon unberührt.'}</p>${!demo?btn('Online-Demo öffnen ↗','open-demo'):''}</section><div class="admin-grid">${accountManagementView()}<section class="panel"><h3>Mitgliedsanträge</h3><p>Unterschriebene PDF-Anträge einsehen, einzeln oder gemeinsam herunterladen und nach Bearbeitung löschen.</p><div class="admin-actions">${btn('Anträge öffnen','membership-inbox')}</div></section></div>`;}
+function accountManagementView(){return `<section class="panel"><h3>Benutzer & Teamzuordnung</h3>${demo?'<p class="notice">Echte Konten sind in der Demo deaktiviert. Oben lassen sich Rolle und eigenes Team testen.</p>':`<p class="legend">Mitspieler benötigen ein zugeordnetes Team. Mehrere Personen können demselben Team angehören.</p><div class="admin-actions">${btn('Konto anlegen','account-add')}${btn('Vorhandenes Konto zuweisen','role-add')}</div>${users.map(u=>`<div class="user-row"><div><b>${e(u.name)}</b><small>${e(u.email)} · ${roleLabel(u.role)}${u.teamId?` · ${e(catalog.find(t=>t.id===(u.tournamentId??'main'))?.title??u.tournamentId??'main')} · ${e((u.tournamentId??'main')===selectedTournamentId?(team(u.teamId)?.name??'Team fehlt'):'Team zugeordnet')}`:''}</small></div><button class="text-button" data-action="role-edit" data-id="${e(u.uid)}">Bearbeiten</button><button class="text-button" data-action="account-invite" data-id="${e(u.uid)}">Passwortlink senden</button></div>`).join('')}`}</section>`;}
+function boardView(){return `<div class="section-head"><div><p class="eyebrow">NUR FÜR DEN VORSTAND</p><h2>Vorstand.</h2><p>Geschützte Vereinsverwaltung.</p></div><span class="tag red-tag">VORSTAND</span></div><section class="panel demo-entry"><h3>Turnier ausprobieren</h3><p>${demo?'Du arbeitest mit lokalen Beispieldaten. Echte Konten und PDF-Abgaben sind gesperrt; die Mitgliederaufnahme kann mit einem erfundenen Antrag getestet werden.':'Teste den vollständigen Turnierablauf mit Beispieldaten in einem separaten Tab. Das Live-Turnier bleibt davon unberührt.'}</p>${!demo?btn('Online-Demo öffnen ↗','open-demo'):''}</section>${boardTournamentPanel()}<section class="panel board-tournament-panel"><h3>Anmeldungen & Mitglieder</h3><p>Turnieranmeldungen, Warteliste, Kosten und Mitgliedsabgleich. Die Mitgliederliste und Spieler-E-Mails bleiben dem Vorstand vorbehalten.</p><div class="admin-actions"><button class="button light" data-view="registrations">Turnieranmeldungen verwalten</button><button class="button light" data-view="members">Mitglieder verwalten</button></div></section><div class="admin-grid">${accountManagementView()}<section class="panel"><h3>Mitgliedsanträge</h3><p>Unterschriebene Anträge prüfen, in die Mitgliederverwaltung übernehmen und PDFs einzeln oder gemeinsam herunterladen.</p><div class="admin-actions">${btn('Anträge öffnen','membership-inbox')}</div></section></div>`;}
