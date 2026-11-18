@@ -1,4 +1,5 @@
 /** Reine Datenlogik für Anmeldung und private Mitgliederverwaltung. Beträge in Cent. */
+import {memberNumber,phoneNumber} from './member-format.js';
 export const euro=cents=>new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(cents/100);
 export const fullName=p=>`${p.firstName} ${p.lastName}`.trim();
 export const nameKey=s=>String(s).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('de').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,' ').trim();
@@ -35,7 +36,7 @@ export function normalizeMember(data){
  const feeHistory={};for(const [year,value]of Object.entries(data.feeHistory??{})){need(/^20\d{2}$/.test(year),'Ungültiges Beitragsjahr.');feeHistory[year]=text(value,120);}
  need(Object.keys(feeHistory).length<=50,'Zu viele Beitragsjahre.');
  const feeColors={};for(const[year,color]of Object.entries(data.feeColors??{})){need(/^20\d{2}$/.test(year)&&/^#[0-9A-Fa-f]{6}$/.test(color),'Ungültige Beitragsmarkierung.');feeColors[year]=color.toUpperCase();}need(Object.keys(feeColors).length<=50,'Zu viele Beitragsmarkierungen.');
- return{number:text(data.number,40),firstName,lastName,active:!!data.active,joined:text(data.joined,30),occupation:text(data.occupation,120),email:text(data.email,254),phone:text(data.phone,80),iban:text(data.iban,80),mandate:text(data.mandate,80),notes:text(data.notes,1000),feeHistory,feeColors,birthDate:text(data.birthDate,10),street:text(data.street,120),postalCode:text(data.postalCode,20),city:text(data.city,100),bank:text(data.bank,120),accountHolder:text(data.accountHolder,120),accountUid:text(data.accountUid,128),applicationId:text(data.applicationId,128)};
+ return{number:text(memberNumber(data.number),40),firstName,lastName,active:!!data.active,joined:text(data.joined,30),occupation:text(data.occupation,120),email:text(data.email,254),phone:text(phoneNumber(data.phone),80),iban:text(data.iban,80),mandate:text(data.mandate,80),notes:text(data.notes,1000),feeHistory,feeColors,birthDate:text(data.birthDate,10),street:text(data.street,120),postalCode:text(data.postalCode,20),city:text(data.city,100),bank:text(data.bank,120),accountHolder:text(data.accountHolder,120),accountUid:text(data.accountUid,128),applicationId:text(data.applicationId,128)};
 }
 export const contactFields=['email','phone','street','postalCode','city','occupation'];
 export function normalizeContact(data){

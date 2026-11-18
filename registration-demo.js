@@ -1,6 +1,8 @@
 // Ausschließlich erfundene Beispieldaten im Arbeitsspeicher, keine echte Ablage.
 import {defaultRegistrationSettings,normalizeMember,normalizeRegistration,reconcileSettings,validatePrivateImport,applicationMember,memberProfile,normalizeContact} from './registration.js';
+import {normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 export function createDemoRegistry(){
+ const contributions=new Map(),transactions=new Map(),listeners=new Set();
  const events=new Map(),entries=new Map(),members=new Map(),applications=[{id:'demo-application',filename:'Demo-Antrag.pdf',data:{firstName:'Mika',lastName:'Beispiel',birthDate:'2000-01-02',email:'mika@example.test',phone:'0123456789',street:'Beispielweg 1',postalCode:'21423',city:'Musterstadt',occupation:'',bank:'Beispielbank',iban:'DE89370400440532013000',accountHolder:'',applicationPlace:'Musterstadt',applicationDate:'2026-11-17',debitPlace:'Musterstadt',debitDate:'2026-11-17'}}];
  const getEvent=id=>{if(!events.has(id)){events.set(id,{...defaultRegistrationSettings(),open:true});entries.set(id,[]);}return events.get(id);};
  members.set('example-1',{id:'example-1',...normalizeMember({number:'D01',firstName:'Alex',lastName:'Beispiel',email:'alex@example.test',active:true})});
@@ -18,6 +20,10 @@ export function createDemoRegistry(){
    events.set(id,reconcileSettings(s,old,row));if(old)Object.assign(old,row);else rows.push(row);return copy(row);
   },
   listMembers:async()=>copy([...members.values()]),
+  watchContributions:async(year,callback)=>{const fn=()=>callback(copy([...contributions.values()].filter(r=>r.year===String(year))));listeners.add(fn);fn();return()=>listeners.delete(fn);},
+  saveContribution:async(memberId,year,input,revision)=>{const key=year+'/'+memberId,old=contributions.get(key);if((old?.revision??-1)!==revision)throw Error('Der Beitrag wurde inzwischen geändert.');contributions.set(key,{...normalizeContribution(input),memberId,year:String(year),revision:revision+1});listeners.forEach(fn=>fn());},
+  recordContributionPayment:async(memberId,year,row,kind)=>{if(transactions.has(row.id))return{duplicate:true};const key=year+'/'+memberId,current=contributions.get(key)??legacyContribution(members.get(memberId),year),next=applyBankPayment(current,row,kind);contributions.set(key,{...next,memberId,year:String(year),revision:current.revision+1});transactions.set(row.id,{...copy(row),memberId,year:String(year),kind});listeners.forEach(fn=>fn());return{duplicate:false};},
+  listContributionTransactions:async memberId=>copy([...transactions.values()].filter(r=>r.memberId===memberId)),
   listMemberships:async()=>copy(applications),
   deleteMembership:async id=>{const i=applications.findIndex(a=>a.id===id);if(i>=0)applications.splice(i,1);},
   acceptMembership:async(id,options)=>{const a=applications.find(a=>a.id===id);if(!a||a.review)throw Error('Antrag fehlt oder wurde bereits bearbeitet.');const key=options.memberId||'application-'+id,m=applicationMember(options.data??a.data,{id:key,existing:members.get(key),number:options.number,joined:options.joined,applicationId:id});members.set(key,m);a.review={status:'accepted',memberId:key};return key;},

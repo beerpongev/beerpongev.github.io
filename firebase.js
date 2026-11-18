@@ -1,6 +1,7 @@
 import { firebaseConfig, tournamentId, useEmulators } from './config.js';
 import { runStateTransaction } from './transaction.js';
 import {defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact} from './registration.js';
+import {validYear,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 
 export const configured = firebaseConfig.apiKey !== 'HIER_EINTRAGEN' && firebaseConfig.projectId !== 'DEIN-PROJEKT';
 export const liveCacheKey = `beerpong-live-${firebaseConfig.projectId}`;
@@ -187,6 +188,23 @@ export async function saveRegistration(id,input,{entryId,status='confirmed',sour
  });
 }
 export async function listMembers(){await requireBoardAccount();const snapshot=await api.getDocs(api.collection(db,'members'));return snapshot.docs.map(d=>({id:d.id,...d.data()}));}
+function contributionRef(memberId,year){if(!validYear(year)||!/^[a-zA-Z0-9_-]{1,128}$/.test(memberId))throw Error('Ungültige Mitglieds-ID oder Beitragsjahr.');return api.doc(db,'memberContributions',String(year),'entries',memberId);}
+export async function watchContributions(year,onRows,onError){await requireBoardAccount();if(!validYear(year))throw Error('Ungültiges Beitragsjahr.');return api.onSnapshot(api.collection(db,'memberContributions',String(year),'entries'),s=>onRows(s.docs.map(d=>({id:d.id,...d.data()}))),onError);}
+export async function saveContribution(memberId,year,input,expectedRevision){
+ await requireBoardAccount();const ref=contributionRef(memberId,year),data=normalizeContribution(input);
+ await api.runTransaction(db,async tx=>{const [member,old]=await Promise.all([tx.get(api.doc(db,'members',memberId)),tx.get(ref)]);if(!member.exists())throw Error('Mitglied nicht mehr vorhanden.');if((old.data()?.revision??-1)!==expectedRevision)throw Error('Der Beitrag wurde inzwischen geändert. Bitte neu öffnen.');tx.set(ref,{...data,memberId,year:String(year),revision:(old.data()?.revision??-1)+1,updatedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});});
+}
+/** Genau eine bestätigte Buchung; derselbe CSV-Umsatz wird auch bei erneuter Datei nicht doppelt gezählt. */
+export async function recordContributionPayment(memberId,year,row,kind){
+ await requireBoardAccount();if(!/^[a-f0-9]{64}$/.test(row.id))throw Error('Ungültige Buchungskennung.');const ref=contributionRef(memberId,year),receipt=api.doc(db,'contributionTransactions',row.id);
+ return api.runTransaction(db,async tx=>{const [member,old,previous]=await Promise.all([tx.get(api.doc(db,'members',memberId)),tx.get(ref),tx.get(receipt)]);if(previous.exists())return{duplicate:true};if(!member.exists())throw Error('Mitglied nicht mehr vorhanden.');
+  const current=old.exists()?old.data():legacyContribution({id:memberId,...member.data()},year),next=applyBankPayment(current,row,kind);
+  tx.set(ref,{...next,memberId,year:String(year),revision:(old.data()?.revision??-1)+1,updatedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});
+  const bank={date:row.date,amountCents:row.amountCents,name:String(row.name??'').slice(0,200),iban:String(row.iban??'').slice(0,80),purpose:String(row.purpose??'').slice(0,1000),reference:String(row.reference??'').slice(0,200),bookingText:String(row.bookingText??'').slice(0,200),mandate:String(row.mandate??'').slice(0,80),originalCents:row.originalCents??0};
+  tx.set(receipt,{...bank,memberId,year:String(year),kind,recordedBy:auth.currentUser.uid,createdAt:api.serverTimestamp()});return{duplicate:false};
+ });
+}
+export async function listContributionTransactions(memberId){await requireBoardAccount();const snapshot=await api.getDocs(api.query(api.collection(db,'contributionTransactions'),api.where('memberId','==',memberId)));return snapshot.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>b.date.localeCompare(a.date));}
 export async function watchPrivateRegistry(id,{onEntries,onMembers,onError}){
  await requireBoardAccount();checkRegistrationId(id);
  const stopEntries=api.onSnapshot(api.collection(db,'tournamentRegistrations',id,'entries'),s=>onEntries(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.sequence-b.sequence)),onError);
