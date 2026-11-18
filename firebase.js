@@ -2,6 +2,7 @@ import { firebaseConfig, tournamentId, useEmulators } from './config.js';
 import { runStateTransaction } from './transaction.js';
 import {defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact} from './registration.js';
 import {validYear,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
+import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
 
 export const configured = firebaseConfig.apiKey !== 'HIER_EINTRAGEN' && firebaseConfig.projectId !== 'DEIN-PROJEKT';
 export const liveCacheKey = `beerpong-live-${firebaseConfig.projectId}`;
@@ -200,10 +201,12 @@ export async function recordContributionPayment(memberId,year,row,kind){
  return api.runTransaction(db,async tx=>{const [member,old,previous]=await Promise.all([tx.get(api.doc(db,'members',memberId)),tx.get(ref),tx.get(receipt)]);if(previous.exists())return{duplicate:true};if(!member.exists())throw Error('Mitglied nicht mehr vorhanden.');
   const current=old.exists()?old.data():legacyContribution({id:memberId,...member.data()},year),next=applyBankPayment(current,row,kind);
   tx.set(ref,{...next,memberId,year:String(year),revision:(old.data()?.revision??-1)+1,updatedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});
+  if(kind==='return')tx.update(api.doc(db,'members',memberId),{bankStatus:'unclear',bankNote:'Rücklastschrift vom '+row.date+' · Bankverbindung vor weiterem Einzug prüfen.',updatedAt:api.serverTimestamp()});
   const bank={date:row.date,amountCents:row.amountCents,name:String(row.name??'').slice(0,200),iban:String(row.iban??'').slice(0,80),purpose:String(row.purpose??'').slice(0,1000),reference:String(row.reference??'').slice(0,200),bookingText:String(row.bookingText??'').slice(0,200),mandate:String(row.mandate??'').slice(0,80),originalCents:row.originalCents??0};
   tx.set(receipt,{...bank,memberId,year:String(year),kind,recordedBy:auth.currentUser.uid,createdAt:api.serverTimestamp()});return{duplicate:false};
  });
 }
+export async function listBankReturnRisks(){await requireBoardAccount();const snapshot=await api.getDocs(api.query(api.collection(db,'contributionTransactions'),api.where('kind','==','return')));return snapshot.docs.map(d=>({memberId:d.data().memberId,date:d.data().date,createdAt:d.data().createdAt}));}
 export async function listContributionTransactions(memberId){await requireBoardAccount();const snapshot=await api.getDocs(api.query(api.collection(db,'contributionTransactions'),api.where('memberId','==',memberId)));return snapshot.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>b.date.localeCompare(a.date));}
 export async function watchPrivateRegistry(id,{onEntries,onMembers,onError}){
  await requireBoardAccount();checkRegistrationId(id);
@@ -212,23 +215,27 @@ export async function watchPrivateRegistry(id,{onEntries,onMembers,onError}){
  return()=>{stopEntries();stopMembers();};
 }
 export async function saveMember(id,input,{expectedUpdatedAt}={}){
- await requireBoardAccount();const key=id??crypto.randomUUID();
+ await requireBoardAccount();const key=id??crypto.randomUUID(),seed=!id?mandateSequence(await listMembers()):null;
  await api.runTransaction(db,async tx=>{const ref=api.doc(db,'members',key),old=await tx.get(ref),previous=old.data();
   if(expectedUpdatedAt!==undefined&&(previous?.updatedAt?.toMillis?.()??null)!==expectedUpdatedAt)throw Error('Das Mitglied wurde inzwischen geändert. Bitte neu öffnen.');
-  const member=normalizeMember({...input,accountUid:previous?.accountUid??''}),profileRef=member.accountUid?api.doc(db,'memberProfiles',member.accountUid):null,profile=profileRef?await tx.get(profileRef):null;
+  const member=normalizeMember({...input,accountUid:previous?.accountUid??'',bankReviewedAt:previous?.bankReviewedAt??null}),allocation=!id?await allocateMandate(tx,member.joined,seed):null,profileRef=member.accountUid?api.doc(db,'memberProfiles',member.accountUid):null,profile=profileRef?await tx.get(profileRef):null;
+  if(previous?.bankStatus==='unclear'&&member.bankStatus==='ok'&&!input.bankReviewConfirmed)throw Error('Bitte die geprüfte Bankverbindung ausdrücklich für weitere Einzüge freigeben.');
+  if(input.bankReviewConfirmed&&member.bankStatus==='ok')member.bankReviewedAt=api.serverTimestamp();
+  if(allocation){member.mandate=allocation.reference;member.number=String(allocation.number);writeMandateCounter(tx,allocation);}
   tx.set(ref,{...member,updatedAt:api.serverTimestamp()});if(profileRef)tx.set(profileRef,{...memberProfile({id:key,...member},(profile?.data()?.revision??-1)+1),updatedAt:api.serverTimestamp()});
  });return key;
 }
 /** Aufnahme erfolgt ausschließlich nach Vorstandsentscheidung, atomar und einmalig. */
 export async function acceptMembership(id,{data,memberId,number,joined,expectedUpdatedAt}={}){
- await requireBoardAccount();const target=memberId||'application-'+id;
+ await requireBoardAccount();const target=memberId||'application-'+id,seed=!memberId?mandateSequence(await listMembers()):null;
  return api.runTransaction(db,async tx=>{
   const [application,review,old]=await Promise.all([tx.get(api.doc(db,'membershipApplications',id)),tx.get(api.doc(db,'membershipReviews',id)),tx.get(api.doc(db,'members',target))]);
   if(!application.exists())throw Error('Der Antrag ist nicht mehr vorhanden.');if(review.exists())throw Error('Dieser Antrag wurde bereits bearbeitet.');
   if(!memberId&&old.exists())throw Error('Der Mitgliedsdatensatz existiert bereits. Bitte zuordnen.');
   if(memberId&&!old.exists())throw Error('Das ausgewählte Mitglied existiert nicht mehr.');
   if(expectedUpdatedAt!==undefined&&(old.data()?.updatedAt?.toMillis?.()??null)!==expectedUpdatedAt)throw Error('Das Mitglied wurde inzwischen geändert. Bitte neu prüfen.');
-  const member=applicationMember(data??application.data().data,{id:target,existing:old.data(),number,joined,applicationId:id}),profileRef=member.accountUid?api.doc(db,'memberProfiles',member.accountUid):null,profile=profileRef?await tx.get(profileRef):null;
+  const member=applicationMember(data??application.data().data,{id:target,existing:old.data(),number,joined,applicationId:id}),allocation=!old.exists()?await allocateMandate(tx,member.joined,seed):null,profileRef=member.accountUid?api.doc(db,'memberProfiles',member.accountUid):null,profile=profileRef?await tx.get(profileRef):null;
+  if(allocation){member.mandate=allocation.reference;member.number=String(allocation.number);writeMandateCounter(tx,allocation);}
   const {id:unused,...fields}=member;tx.set(api.doc(db,'members',target),{...fields,updatedAt:api.serverTimestamp()});
   if(profileRef)tx.set(profileRef,{...memberProfile(member,(profile?.data()?.revision??-1)+1),updatedAt:api.serverTimestamp()});
   tx.set(api.doc(db,'membershipReviews',id),{status:'accepted',memberId:target,note:'',reviewedBy:auth.currentUser.uid,reviewedAt:api.serverTimestamp()});return target;
@@ -238,6 +245,9 @@ export async function rejectMembership(id,note){
  await requireBoardAccount();if(!String(note).trim())throw Error('Bitte eine interne Begründung angeben.');
  await api.runTransaction(db,async tx=>{const ref=api.doc(db,'membershipReviews',id),[app,review]=await Promise.all([tx.get(api.doc(db,'membershipApplications',id)),tx.get(ref)]);if(!app.exists()||review.exists())throw Error('Antrag fehlt oder wurde bereits bearbeitet.');tx.set(ref,{status:'rejected',memberId:'',note:String(note).trim().slice(0,1000),reviewedBy:auth.currentUser.uid,reviewedAt:api.serverTimestamp()});});
 }
+/** Globaler Zähler: 120 folgt auf den bisherigen Bestand 119, auch über Jahreswechsel. */
+async function allocateMandate(tx,joined,seed){const ref=api.doc(db,'mandateCounters','global'),old=await tx.get(ref);return{...nextMandate(mandateYear(joined),seed,old.data()?.lastNumber??0),ref};}
+function writeMandateCounter(tx,allocation){tx.set(allocation.ref,{lastNumber:allocation.number,updatedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});}
 export async function linkMemberAccount(memberId,uid){
  await requireBoardAccount();
  await api.runTransaction(db,async tx=>{
