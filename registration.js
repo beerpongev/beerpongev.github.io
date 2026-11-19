@@ -61,7 +61,8 @@ export function applicationMember(data,{id,existing,number,joined,applicationId}
 }
 export function membershipSuggestions(person,members){
  const key=nameKey(fullName(person)),surname=nameKey(person.lastName),first=nameKey(person.firstName);
- return members.map(m=>({member:m,exact:nameKey(fullName(m))===key})).filter(x=>x.exact||(surname&&nameKey(x.member.lastName)===surname)||(first&&nameKey(x.member.firstName)===first&&nameKey(x.member.lastName).startsWith(surname.slice(0,3)))).sort((a,b)=>Number(b.exact)-Number(a.exact)||Number(b.member.active)-Number(a.member.active)).slice(0,6);
+ const email=String(person.email??'').trim().toLowerCase();
+ return members.map(m=>{const exact=!!key&&nameKey(fullName(m))===key,mail=!!email&&email===String(m.email??'').trim().toLowerCase(),linked=!!person.memberId&&person.memberId===m.id;return{member:m,exact,score:linked?110:mail?100:exact?90:surname&&nameKey(m.lastName)===surname?60:first&&nameKey(m.firstName)===first&&surname&&nameKey(m.lastName).startsWith(surname.slice(0,3))?40:0,reason:linked?'Bereits zugeordnet':mail?'Gleiche E-Mail-Adresse':exact?'Gleicher Vor- und Nachname':'Ähnlicher Name'};}).filter(x=>x.score>0).sort((a,b)=>Number(b.member.active)-Number(a.member.active)||b.score-a.score||a.member.firstName.localeCompare(b.member.firstName,'de')||a.member.lastName.localeCompare(b.member.lastName,'de')).slice(0,6);
 }
 export function membershipReviewSignature(person,members){
  return members.filter(m=>m.active&&((person.email&&m.email&&m.email.toLowerCase()===person.email.toLowerCase())||nameKey(fullName(m))===nameKey(fullName(person)))).map(m=>m.id).sort().join('|');

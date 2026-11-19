@@ -199,7 +199,7 @@ export async function submitRegistration(id,input){
  });
 }
 export async function listRegistrations(id){await requireBoardAccount();checkRegistrationId(id);const snapshot=await api.getDocs(api.collection(db,'tournamentRegistrations',id,'entries'));return snapshot.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.sequence-b.sequence);}
-export async function saveRegistration(id,input,{entryId,status='confirmed',source='board',sourceDate='',expectedUpdatedAt}={}){
+export async function saveRegistration(id,input,{entryId,status='confirmed',source='board',sourceDate='',expectedUpdatedAt,contactEmailUpdates=[]}={}){
  await requireBoardAccount();checkRegistrationId(id);const key=entryId??crypto.randomUUID(),data=normalizeRegistration(input,{board:true,allowMissingEmail:true});
  if(!['confirmed','waitlist','cancelled'].includes(status))throw Error('Ungültiger Anmeldestatus.');
  return api.runTransaction(db,async tx=>{
@@ -209,6 +209,16 @@ export async function saveRegistration(id,input,{entryId,status='confirmed',sour
   const row={...normalizeRegistration({...input,prices:input.prices??settings.prices},{board:true,allowMissingEmail:true}),owner:old?.owner??auth.currentUser.uid,status,sequence:old?.sequence??settings.nextSequence+1,source:old?.source??source,sourceDate:old?.sourceDate??sourceDate,consent:old?.consent??false,createdAt:old?.createdAt??api.serverTimestamp(),updatedAt:api.serverTimestamp()};
   const emails=new Set([...(old?.players??[]),...row.players].map(p=>p.email).filter(Boolean));
   const claims=await Promise.all([...emails].map(async email=>({email,ref:api.doc(db,'registrationClaims',id,'emails',email),snap:await tx.get(api.doc(db,'registrationClaims',id,'emails',email))})));
+  if(!Array.isArray(contactEmailUpdates)||contactEmailUpdates.length>2||new Set(contactEmailUpdates.map(u=>u.memberId)).size!==contactEmailUpdates.length)throw Error('Bitte die Kontaktübernahmen prüfen.');
+  const contacts=[];
+  for(const update of contactEmailUpdates){
+   const person=row.players.find(p=>p.verified&&p.member&&p.memberId===update.memberId);if(!person||!person.email)throw Error('Kontakt-E-Mail nur für ein ausdrücklich bestätigtes Mitglied übernehmen.');
+   const memberRef=api.doc(db,'members',update.memberId),member=await tx.get(memberRef);if(!member.exists()||!member.data().active)throw Error('Das ausgewählte Mitglied ist nicht mehr aktiv.');
+   if(member.data().email!==update.expectedEmail)throw Error('Die Kontaktadresse wurde inzwischen geändert. Bitte neu öffnen.');
+   const profileRef=member.data().accountUid?api.doc(db,'memberProfiles',member.data().accountUid):null,profile=profileRef?await tx.get(profileRef):null;
+   contacts.push({memberRef,email:person.email,profileRef,profile});
+  }
+  for(const contact of contacts){tx.update(contact.memberRef,{email:contact.email,updatedAt:api.serverTimestamp()});if(contact.profile?.exists())tx.update(contact.profileRef,{email:contact.email,revision:contact.profile.data().revision+1,updatedAt:api.serverTimestamp()});}
   for(const claim of claims){
    const needed=status!=='cancelled'&&row.players.some(p=>p.email===claim.email);
    if(needed&&claim.snap.exists()&&claim.snap.data().entryId!==key)throw Error('Eine Person ist bereits in einer anderen Anmeldung eingetragen. Bitte die Dublette zuerst prüfen.');
