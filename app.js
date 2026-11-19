@@ -373,7 +373,7 @@ function handleAction(action,id){
     case 'initialize':task(()=>adminCommit(()=>({...E.emptyTournament(),title:currentTournament().title})),'Turnier angelegt.');break;
     case 'team-add':if(admin()&&state.teams.length<32)teamDialog();break;
     case 'team-edit':if(admin())teamDialog(id);break;
-    case 'team-delete':confirmation('Team entfernen?',`${name(id)} wird aus der Vorbereitung entfernt.`,'delete-team',{teamId:id});break;
+    case 'team-delete':confirmation('Team entfernen?',`${name(id)} wird aus dem Spielplan entfernt. Die Anmeldung und der reservierte Startplatz bleiben bestehen. Eine Abmeldung erfasst der Vorstand unter Turnieranmeldungen → Absage erfassen.`,'delete-team',{teamId:id});break;
     case 'advance':confirmation(`${nextLabel(state)}?`,state.phase==='setup'?'Alle 32 Teams müssen vollständig sein und auf acht Gruppen verteilt sein. Beim Start werden freie Tische automatisch belegt.':'Alle Spiele der aktuellen Phase müssen abgeschlossen sein. Frühere Ergebnisse sind danach nur durch die Spielleitung korrigierbar.','advance');break;
     case 'reset':confirmation('Turnier zurücksetzen – Schritt 1 von 2','Alle Ergebnisse, Paarungen, Tischwarteschlangen und Tischzeitpläne werden gelöscht. Teams, Gruppen und Benutzer bleiben erhalten. Vorher eine Sicherung herunterladen.','reset-first');break;
     case 'shuffle':confirmation('Gruppen neu auslosen?','Die 32 Teams werden neu auf A–H verteilt. Vorhandene Gruppenzuordnungen werden ersetzt.','shuffle');break;

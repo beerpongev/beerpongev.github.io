@@ -367,3 +367,4 @@ export async function removeAccountAccess(uid){
  for(let offset=0;offset<bindings.length;offset+=100){const batch=bindings.slice(offset,offset+100);await api.runTransaction(db,async tx=>{const records=await Promise.all(batch.map(b=>tx.get(b.ref)));for(let i=0;i<batch.length;i++){const b=batch[i],old=records[i];if(!old.exists())continue;if(b.unlink){if(old.data().accountUid===uid)tx.update(b.ref,{accountUid:'',updatedAt:api.serverTimestamp()});}else tx.delete(b.ref);}});}
  await api.deleteDoc(roleRef);return{uid,authDeletionRequired:true};
 }
+
