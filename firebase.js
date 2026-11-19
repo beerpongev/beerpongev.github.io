@@ -50,18 +50,32 @@ export async function connect({ onState, onUser, onRole, onUsers, onConnection, 
   }
   let stopRole = () => {}, stopUsers = () => {};
   authApi.onAuthStateChanged(auth, user => {
+    let userLoginRecorded=false;
     historyApproved=false;stopRole(); stopUsers(); onUsers([]); onRole('guest',''); onUser(user);
     if (!user) return;
     stopRole = api.onSnapshot(api.doc(db, 'roles', user.uid), snap => {
       const role = snap.data()?.disabled?'guest':snap.data()?.role ?? 'guest';
       historyApproved=!!user&&!user.isAnonymous&&snap.exists()&&!snap.data()?.disabled&&['guest','player','admin','board'].includes(role);
       onRole(role,snap.data()?.teamId??'',snap.data()?.tournamentId??tournamentId); stopUsers();onUsers([]);
-      if (!demoGate&&role==='board') stopUsers = api.onSnapshot(api.collection(db, 'roles'), list => onUsers(list.docs.map(d => ({ uid: d.id, ...d.data() }))), onError);
+      if(!demoGate&&historyApproved&&user.isAnonymous===false&&!userLoginRecorded){userLoginRecorded=true;void recordOwnAppLogin().catch(onError);}
+      if (!demoGate&&role==='board'){
+       let directory=[],activity=new Map();const emit=()=>onUsers(directory.map(u=>({...u,lastAppLoginAt:activity.get(u.uid)??null})));
+       const stopDirectory=api.onSnapshot(api.collection(db,'roles'),list=>{directory=list.docs.map(d=>({uid:d.id,...d.data()}));emit();},onError);
+       const stopActivity=api.onSnapshot(api.collection(db,'accountActivity'),list=>{activity=new Map(list.docs.map(d=>[d.id,d.data().lastLoginAt]));emit();},onError);
+       stopUsers=()=>{stopDirectory();stopActivity();};
+      }
     }, onError);
   });
 }
 
 /** Genau ein Live-Spielplan pro Gerät; verspätete Antworten alter Listener verwerfen. */
+export async function recordOwnAppLogin(){
+ liveOnly();const current=auth?.currentUser;if(!current||current.isAnonymous)throw Error('Bitte zuerst anmelden.');
+ const token=await authApi.getIdTokenResult(current),seconds=Number(token.claims.auth_time);if(!Number.isSafeInteger(seconds)||seconds<=0)throw Error('Anmeldezeitpunkt konnte nicht ermittelt werden.');
+ if(auth.currentUser?.uid!==current.uid)throw Error('Die Anmeldung wurde inzwischen gewechselt.');
+ const ref=api.doc(db,'accountActivity',current.uid);
+ await api.runTransaction(db,async tx=>{const previous=await tx.get(ref);if((previous.data()?.lastLoginAt??0)>=seconds)return;tx.set(ref,{lastLoginAt:seconds,updatedAt:api.serverTimestamp()});});
+}
 export function selectTournament(id){
   liveOnly();
   if(id===null){stopState();++stateGeneration;ref=null;stateCallbacks.onConnection(false);return;}
@@ -271,12 +285,13 @@ export async function recordPlayerInvitation(id,entryId,slot,{email,status,error
  const ref=api.doc(db,'playerInvitations',id,'entries',entryId+'__'+slot);
  await api.runTransaction(db,async tx=>{const old=await tx.get(ref);if(status!=='processing'&&old.data()?.requestId!==requestId)throw Error('Der Einladungsstand wurde inzwischen geändert. Bitte prüfen.');tx.set(ref,{entryId,slot,email,status,error:String(error).slice(0,1000),requestId,requestedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});});
 }
-export async function watchPrivateRegistry(id,{onEntries,onMembers,onInvitations,onError}){
+export async function watchPrivateRegistry(id,{onEntries,onMembers,onInvitations,onAccounts,onError}){
  await requireBoardAccount();checkRegistrationId(id);
  const stopEntries=typeof onEntries==='function'?api.onSnapshot(api.collection(db,'tournamentRegistrations',id,'entries'),s=>onEntries(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.sequence-b.sequence)),onError):()=>{};
  const stopMembers=typeof onMembers==='function'?api.onSnapshot(api.collection(db,'members'),s=>onMembers(s.docs.map(d=>({id:d.id,...d.data()}))),onError):()=>{};
  const stopInvitations=typeof onInvitations==='function'?api.onSnapshot(api.collection(db,'playerInvitations',id,'entries'),s=>onInvitations(s.docs.map(d=>({id:d.id,...d.data()}))),onError):()=>{};
- return()=>{stopEntries();stopMembers();stopInvitations();};
+ const stopAccounts=typeof onAccounts==='function'?api.onSnapshot(api.collection(db,'roles'),s=>onAccounts(s.docs.map(d=>({uid:d.id,...d.data()}))),onError):()=>{};
+ return()=>{stopEntries();stopMembers();stopInvitations();stopAccounts();};
 }
 export async function saveMember(id,input,{expectedUpdatedAt}={}){
  await requireBoardAccount();const key=id??crypto.randomUUID(),seed=!id?mandateSequence(await listMembers()):null;
@@ -397,7 +412,7 @@ export async function removeAccountAccess(uid){
  const bindings=[];
  for(const collection of ['members','persons','participations']){const result=await api.getDocs(api.query(api.collection(db,collection),api.where('accountUid','==',uid)));for(const d of result.docs)bindings.push({ref:api.doc(db,collection,d.id),unlink:true});}
  const teams=await api.getDocs(api.collection(db,'accountTeams',uid,'events'));for(const d of teams.docs)bindings.push({ref:api.doc(db,'accountTeams',uid,'events',d.id),unlink:false});
- bindings.push({ref:api.doc(db,'memberProfiles',uid),unlink:false});
+ bindings.push({ref:api.doc(db,'memberProfiles',uid),unlink:false},{ref:api.doc(db,'accountActivity',uid),unlink:false});
  for(let offset=0;offset<bindings.length;offset+=100){const batch=bindings.slice(offset,offset+100);await api.runTransaction(db,async tx=>{const records=await Promise.all(batch.map(b=>tx.get(b.ref)));for(let i=0;i<batch.length;i++){const b=batch[i],old=records[i];if(!old.exists())continue;if(b.unlink){if(old.data().accountUid===uid)tx.update(b.ref,{accountUid:'',updatedAt:api.serverTimestamp()});}else tx.delete(b.ref);}});}
  await api.deleteDoc(roleRef);return{uid,authDeletionRequired:true};
 }
