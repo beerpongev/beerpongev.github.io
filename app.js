@@ -11,7 +11,7 @@ import {escapeHTML as e,localDate} from './ui.js';
 import {parseTeamsCSV,validateBackup} from './data.js';
 import {loadDocuments,rulesView,bindDocumentSearch,documentPages} from './documents.js';
 import {membershipView,bindMembership} from './membership.js';
-import {DEFAULT_TOURNAMENTS,mergeTournamentCatalog,validTournamentId,validateTournamentInfo,tournamentDate,homeView,tournamentsView,externalArchiveView,loadClubArchive,getClubArchives,bindArchiveGames} from './club.js';
+import {DEFAULT_TOURNAMENTS,mergeTournamentCatalog,validTournamentId,validateTournamentInfo,tournamentDate,homeView,tournamentsView,externalArchiveView,loadClubArchive,getClubArchives,bindArchiveGames,clearClubArchives} from './club.js';
 
 const $=s=>document.querySelector(s),localDemo=!cloud.configured,onlineDemoRequested=cloud.configured&&new URL(location.href).searchParams.get('demo')==='1';
 const DEMO_BASE_KEY=onlineDemoRequested?'beerpong-board-demo-'+cloud.liveCacheKey:'beerpong-demo-v2';
@@ -29,12 +29,13 @@ let view=routeView();
 let groupFilter='all',roundFilter='r16',gameFilter='open',tableFilter='all',search='',matchLimit=12,ownOnly=false,teamMode='teams';
 let modal={},installEvent,toastTimer,privateApplications=[];
 let playerCalloutMarkup='',archiveLoad,clubRenderIdentity='';
-function ensureArchives(){return archiveLoad??=loadClubArchive();}
+const canHistory=()=>demo?role!=='guest':!!user&&!user.isAnonymous&&cloud.historyApproved;
+function ensureArchives(){if(!canHistory())return Promise.resolve();return archiveLoad=loadClubArchive(demo?demoRegistry.listSportArchives:cloud.listSportArchives).catch(error=>{archiveLoad=null;throw error;});}
 const admin=()=>['admin','board'].includes(role),board=()=>role==='board'&&(!onlineDemoRequested||demoAccessRole==='board');
 const demoRoles=()=>['guest','player','admin',...(!onlineDemoRequested||demoAccessRole==='board'?['board']:[])];
 const writable=()=>!busy&&!isReadOnly()&&(demo||(synced&&navigator.onLine))&&['board','admin','player'].includes(role);
 const team=id=>state?.teams.find(t=>t.id===id),own=id=>!!teamId&&id===teamId;
-const name=id=>`<span class="${own(id)?'own-team-name':''}">${e(team(id)?.name??'Noch offen')}${own(id)?'<span class="own-badge">Dein Team</span>':''}</span>`;
+const name=id=>`<button type="button" class="text-button" data-action="team-history" data-id="${e(team(id)?.name??'')}"><span class="${own(id)?'own-team-name':''}">${e(team(id)?.name??'Noch offen')}${own(id)?'<span class="own-badge">Dein Team</span>':''}</span></button>`;
 const canScore=m=>!!m&&writable()&&(admin()||(role==='player'&&state.allowSelfScoring&&m.phase===state.phase&&[m.a,m.b].includes(teamId)));
 const btn=(label,action,id='',extra='')=>`<button class="button light" data-action="${action}" data-id="${e(id)}" ${extra}>${label}</button>`;
 const statusLabels={free:'Frei',open:'Zugewiesen · offen',preparing:'In Vorbereitung',playing:'Wird bespielt',disabled:'Nicht bespielbar',draining:'Läuft aus'};
@@ -110,6 +111,7 @@ function syncLocation(push=false){
   if(url.href!==location.href)history[push?'pushState':'replaceState']({},'',url);
 }
 function navigateView(next){
+  if(next==='history'&&!canHistory()){toast('Bitte zuerst anmelden.');return;}
   if(busy)return;
   if(!Object.hasOwn(routeNames,next))return;
   if(['admin','registrations'].includes(next)&&isReadOnly()){
@@ -120,6 +122,7 @@ function navigateView(next){
 }
 async function chooseTournament(id,keepBoard=false){
   if(busy)return;
+  if(catalog.find(t=>t.id===id)?.archived&&!canHistory()){toast('Bitte zuerst mit einem freigegebenen Konto anmelden.');return;}
   if(!catalog.some(t=>t.id===id)){toast('Dieses Turnier ist nicht bekannt.');return;}
   if(catalog.find(t=>t.id===id)?.externalUrl)void ensureArchives().then(()=>render(true));
   $('#dialog').close();selectedTournamentId=id;state=null;synced=false;teamId='';refreshOwnTeam();
@@ -134,7 +137,7 @@ function renderTournamentNavigation(){
   $('#tournament-context').hidden=!show;$('#tournament-navigation').hidden=!show||['board','registrations'].includes(view);
   $('#archive-games-tab').hidden=!meta?.externalUrl;$('#tournament-navigation').classList.toggle('has-archive-results',!!meta?.externalUrl);
   if(!show)return;
-  $('#tournament-context').innerHTML=`<div><p class="eyebrow">${meta?.archived?'TURNIERARCHIV':'AUSGEWÄHLTES TURNIER'}</p><label for="tournament-selector" class="sr-only">Turnier auswählen</label><select id="tournament-selector" ${busy?'disabled':''}>${catalog.map(t=>`<option value="${e(t.id)}" ${t.id===selectedTournamentId?'selected':''}>${e(t.title)} · ${t.date.slice(0,4)}${t.archived?' · Archiv':''}</option>`).join('')}</select>${meta?`<p class="legend">${e(tournamentDate(meta))} · ${e(meta.venue)}</p>`:''}</div>${meta?.archived?'<span class="tag">ARCHIV · NUR LESEN</span>':''}`;
+  $('#tournament-context').innerHTML='<div><p class="eyebrow">'+(meta?.archived?'TURNIERARCHIV':'AUSGEWÄHLTES TURNIER')+'</p><h2>'+e(meta?.title??'Turnier')+'</h2><p class="legend">'+(meta?e(tournamentDate(meta))+' · '+e(meta.venue):'')+'</p></div>';
 }
 function tournamentDialog(meta){
   if(!board())return;
@@ -152,7 +155,7 @@ async function saveTournamentForm(data,info){
 }
 async function archiveCurrentTournament(){
   const meta=currentTournament();if(!board()||!meta||state?.phase!=='complete'||isReadOnly())return;
-  await task(async()=>{const {id,...info}=meta;info.archived=true;if(demo)saveDemoCatalog(info,id);else await cloud.saveTournamentInfo(id,info);catalog=mergeTournamentCatalog([...catalog,{id,...info}]);gameFilter='done';},'Turnier ins Archiv übernommen.');
+  await task(async()=>{const {id,...info}=meta;info.archived=true;if(demo)saveDemoCatalog(info,id);else{await cloud.publishSportLineups(id);await cloud.saveTournamentInfo(id,info);}catalog=mergeTournamentCatalog([...catalog,{id,...info}]);gameFilter='done';},'Turnier ins Archiv übernommen.');
 }
 function boardTournamentPanel(){const meta=currentTournament();return `<section class="panel board-tournament-panel"><h3>Vereinsturniere</h3><p>Aktuell ausgewählt: <b>${e(meta?.title??'Kein Turnier')}</b>. Die Benutzer-Teamzuordnung bezieht sich auf dieses Turnier.</p><div class="admin-actions">${btn('Turnierübersicht','show-tournaments')}${btn('Neues Turnier','tournament-new')}${meta&&!meta.archived?btn('Turnierdaten bearbeiten','tournament-edit'):''}${state?.phase==='complete'&&!isReadOnly()?btn('Abgeschlossenes Turnier archivieren','tournament-archive'):''}</div></section>`;}
 window.addEventListener('popstate',()=>{const id=new URL(location.href).searchParams.get('turnier')??'main',next=routeView();if(id!==selectedTournamentId&&catalog.some(t=>t.id===id))void chooseTournament(id).then(()=>{view=next;syncLocation();render(true);});else{view=next;render(true);}});
@@ -192,6 +195,8 @@ function render(force=false){
   if(onlineDemoRequested&&!demoAuthorized){renderDemoGate();return;}
   $('.tabs').hidden=false;
   syncLiveState();
+  document.querySelectorAll('[data-view="history"]').forEach(b=>b.hidden=!canHistory());
+  if(!canHistory()){clearClubArchives();archiveLoad=null;if(view==='history'||currentTournament()?.archived){view='home';}}
   renderTournamentNavigation();
   document.body.classList.toggle('archive-view',isReadOnly());
   $('#connection').textContent=demo?(onlineDemoRequested?'Online-Demo':'Lokale Demo'):cloudReady&&!needsLiveState()?'Vereinsseite':synced&&navigator.onLine?'Live verbunden':'Verbindung unterbrochen';$('#connection').classList.toggle('online',!demo&&synced&&navigator.onLine);
@@ -338,6 +343,7 @@ function handleAction(action,id){
   switch(action){
     case 'register-team':void chooseTournament(id).then(()=>{view='registration';syncLocation(true);render(true);});break;
     case 'show-tournaments':navigateView('tournaments');break;
+    case 'team-history':if(canHistory()){view='history';render(true);const root=$('#club-feature-root');if(root){root.dataset.query=id;root.dataset.currentTeam=id;const t=state?.teams.find(t=>t.name===id);root.dataset.currentPlayers=JSON.stringify(t?[t.p1,t.p2]:[]);}}else toast('Bitte anmelden, um die Historie zu öffnen.');break;
     case 'tournament-select':void chooseTournament(id);break;
     case 'tournament-new':if(board())tournamentDialog();break;
     case 'tournament-edit':if(board()&&currentTournament())tournamentDialog(currentTournament());break;
@@ -459,7 +465,7 @@ async function start(){
   else if(onlineDemoRequested){render();try{await cloud.connect({demoGate:true,onState:()=>{},onUsers:()=>{},onConnection:()=>{},onUser:u=>{if(user?.uid!==u?.uid){memberWorkflows.clear();if(view==='profile')$('#main').replaceChildren();}user=u;render();},onRole:r=>setDemoAccess(r),onError:error=>{demoGateError=humanError(error);if(error.code==='permission-denied')setDemoAccess('guest');else render();}});}catch(error){demoGateError=humanError(error);render();}}
   else{
     readStateCache();render();
-    try{const connectedTournamentId=needsLiveState()&&!currentTournament()?.externalUrl?selectedTournamentId:null;await cloud.connect({initialTournamentId:connectedTournamentId,onCatalog:rows=>{catalog=mergeTournamentCatalog(rows);catalogLoaded=true;render(view==='history');},onRegistrationSettings:rows=>{registrationSettings=rows;render();},onState:(s,sourceId)=>{if(sourceId&&sourceId!==selectedTournamentId)return;if(currentTournament()?.externalUrl)return;if(s&&s.schema!==2){toast('Dieser Turnierstand hat ein unbekanntes Format.');return;}state=s;try{if(s)localStorage.setItem(stateCacheKey(),JSON.stringify(s));else localStorage.removeItem(stateCacheKey());}catch{}render();},onUser:u=>{if(user?.uid!==u?.uid){memberWorkflows.clear();if(view==='profile')$('#main').replaceChildren();}user=u;watchOwnTeam();render();},onRole:(r,id,tid='main')=>{if(r!=='board'){registryManagement.clear();privateApplications=[];if($('#dialog-title')?.textContent==='Mitgliedsanträge'||['account','role'].includes($('#modal-form')?.dataset.form))$('#dialog').close();}role=r;assignedTeamId=id;assignedTournamentId=tid;refreshOwnTeam();render();},onUsers:list=>{users=list;render();},onConnection:connected=>{synced=connected;render();},onError:error=>toast(humanError(error))});cloudReady=true;requestedLiveId=connectedTournamentId;if(view==='history')render(true);watchOwnTeam();cloud.watchClubSettings(settings=>{clubSettings=settings;setContributionRates(settings.contributionRates);window.dispatchEvent(new Event('club-settings'));render(['imprint','privacy'].includes(view));},error=>toast(humanError(error)));syncLiveState();}catch(error){toast(`Firebase konnte nicht geladen werden: ${humanError(error)}`);}
+    try{const connectedTournamentId=needsLiveState()&&!currentTournament()?.externalUrl?selectedTournamentId:null;await cloud.connect({initialTournamentId:connectedTournamentId,onCatalog:rows=>{catalog=mergeTournamentCatalog(rows);catalogLoaded=true;render(view==='history');},onRegistrationSettings:rows=>{registrationSettings=rows;render();},onState:(s,sourceId)=>{if(sourceId&&sourceId!==selectedTournamentId)return;if(currentTournament()?.externalUrl)return;if(s&&s.schema!==2){toast('Dieser Turnierstand hat ein unbekanntes Format.');return;}state=s;try{if(s&&!currentTournament()?.archived)localStorage.setItem(stateCacheKey(),JSON.stringify(s));else localStorage.removeItem(stateCacheKey());}catch{}render();},onUser:u=>{if(user?.uid!==u?.uid){memberWorkflows.clear();if(view==='profile')$('#main').replaceChildren();}clearClubArchives();archiveLoad=null;clubAdministration.clear();user=u;watchOwnTeam();render();},onRole:(r,id,tid='main')=>{if(r!=='board'){registryManagement.clear();privateApplications=[];if($('#dialog-title')?.textContent==='Mitgliedsanträge'||['account','role'].includes($('#modal-form')?.dataset.form))$('#dialog').close();}if(role!==r||!cloud.historyApproved){clearClubArchives();archiveLoad=null;clubAdministration.clear();}role=r;assignedTeamId=id;assignedTournamentId=tid;refreshOwnTeam();render();},onUsers:list=>{users=list;render();},onConnection:connected=>{synced=connected;render();},onError:error=>toast(humanError(error))});cloudReady=true;requestedLiveId=connectedTournamentId;if(view==='history')render(true);watchOwnTeam();cloud.watchClubSettings(settings=>{clubSettings=settings;setContributionRates(settings.contributionRates);window.dispatchEvent(new Event('club-settings'));render(['imprint','privacy'].includes(view));},error=>toast(humanError(error)));syncLiveState();}catch(error){toast(`Firebase konnte nicht geladen werden: ${humanError(error)}`);}
   }
   if('serviceWorker'in navigator&&(location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname)))installUpdates().catch(()=>toast('Die Offline-Ansicht konnte nicht eingerichtet werden.'));
 }

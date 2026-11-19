@@ -96,5 +96,8 @@ export function validatePrivateImport(data){
   return{assignmentId:p.assignmentId,tournamentId:p.tournamentId,teamName:p.teamName,year:p.year,date:p.date,edition,slot:p.slot,firstName:p.firstName.trim(),lastName:p.lastName.trim(),personId:p.personId};
  });
  need(Array.isArray(data.archiveLineups??[])&&archiveLineups.length<=500,'Zu viele historische Spielerplätze.');
- return{format:data.format,tournamentId:data.tournamentId,members,registrations,archiveLineups};
+ const archiveSnapshots=data.archiveSnapshots??[];
+ need(Array.isArray(archiveSnapshots)&&archiveSnapshots.length<=50,'Ungültiges Archivpaket.');
+ for(const a of archiveSnapshots)need(/^official-(11|12|13|14)-20[0-9]{2}$/.test(a.id)&&Array.isArray(a.groups)&&Array.isArray(a.knockout)&&Array.isArray(a.lineups)&&a.lineups.length<=100,'Ungültiges Sportarchiv.');
+ return{format:data.format,tournamentId:data.tournamentId,members,registrations,archiveLineups,archiveSnapshots};
 }

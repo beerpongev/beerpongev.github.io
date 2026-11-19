@@ -9,16 +9,11 @@ export const DEFAULT_TOURNAMENTS=[
   {id:'official-12-2023',edition:12,title:'12. offizielles Beerpong-Turnier',date:'2023-12-29',venue:'DGH Stöckte',archived:true,externalUrl:'https://www.meinspielplan.de/plan/BJz9T1'},
   {id:'official-11-2022',edition:11,title:'11. offizielles Beerpong-Turnier',date:'2022-12-30',venue:'DGH Stöckte',archived:true,externalUrl:'https://www.meinspielplan.de/plan/f16PXx'}
 ];
-const archives=new Map();
+const archives=new Map();let archiveGeneration=0;
 export const getClubArchives=()=>[...archives.values()];
-export async function loadClubArchive(){
-  // Ein defekter oder offline fehlender Eintrag darf die anderen Archive nicht blockieren.
-  return Promise.allSettled(DEFAULT_TOURNAMENTS.filter(t=>t.externalUrl).map(async t=>{
-    const response=await fetch(`./content/archive-${t.edition}.json`);if(!response.ok)throw Error('Das Turnierarchiv konnte nicht geladen werden.');
-    const data=await response.json();
-    if(data.id!==t.id||data.sourceUrl!==t.externalUrl||!Array.isArray(data.groups)||!data.groups.length||!Array.isArray(data.knockout)||!data.knockout.length||!Array.isArray(data.placements)||!data.placements.length||!Number.isInteger(data.teamCount)||!Number.isInteger(data.totalMatches)||data.groups.reduce((n,g)=>n+g.teams.length,0)!==data.teamCount)throw Error('Das Archivformat ist unvollständig.');
-    archives.set(t.id,data);
-  }));
+export function clearClubArchives(){archiveGeneration++;archives.clear();}
+export async function loadClubArchive(loader){
+ if(!loader)return;const generation=++archiveGeneration,data=await loader();if(generation!==archiveGeneration)return;archives.clear();for(const archive of data){if(!archive.id||!Array.isArray(archive.groups)||!Array.isArray(archive.knockout))throw Error('Ungültiges Archiv.');archives.set(archive.id,archive);}return data;
 }
 export const validTournamentId=id=>typeof id==='string'&&/^[a-zA-Z0-9_-]{1,80}$/.test(id);
 export function validateTournamentInfo(data){
@@ -38,12 +33,12 @@ const openButton=(t,label='Turnier ansehen')=>`<button class="button ${t.archive
 export function tournamentCard(t){return `<article class="panel club-event-card"><div class="club-card-meta"><span class="tag ${t.archived?'':'red-tag'}">${t.archived?'ARCHIV':'TURNIER'}</span><span>${e(t.date.slice(0,4))}</span></div><h3>${e(t.title)}</h3><p class="club-event-detail">${e(tournamentDate(t))}<br>${e(t.venue)}</p>${t.externalUrl?'<p class="legend">Alle Spielergebnisse und Gruppentabellen aus dem Originalspielplan.</p>':''}${openButton(t,t.archived?'Ergebnisse ansehen':'Zum Turnier')}</article>`;}
 export function homeView(catalog,registrationSettings={}){
   const future=catalog.filter(t=>!t.archived&&t.date>=localDate()).sort((a,b)=>a.date.localeCompare(b.date));
-  const next=future[0]??catalog.find(t=>!t.archived),last=catalog.find(t=>t.archived);
+  const next=future[0]??catalog.find(t=>!t.archived),last=null;
   return `<section class="club-welcome"><p class="eyebrow">BEERPONG ACADEMY e. V.</p><h1>Gemeinsam<br>an den Tisch<span class="red">.</span></h1><p>Wir bringen Menschen beim Beerpong zusammen. Hier findest du unsere Turniere, Ergebnisse und alles rund um die Mitgliedschaft im Verein.</p></section>${next?`<section class="club-next-event"><div><p class="eyebrow">DAS NÄCHSTE TURNIER</p><h2>${e(next.title)}</h2><p class="club-event-date">${e(tournamentDate(next))}</p><p>${e(next.venue)}</p>${registrationTeaser(next,registrationSettings[next.id])}<div class="admin-actions">${openButton(next,'Turnier ansehen')}<button class="button ghost" data-view="membership">Mitglied werden ↗</button></div></div><div class="club-edition-art" aria-hidden="true"><span>${next.edition}</span><small>GEMEINSAM. AM TISCH.</small></div></section>`:''}<div class="club-section-title"><div><p class="eyebrow">GUTE SPIELE BLEIBEN</p><h2>Zuletzt am Tisch.</h2></div><button class="text-button" data-view="tournaments">Alle Turniere ansehen ↗</button></div><div class="club-home-grid">${last?tournamentCard(last):'<div class="panel"><h3>Unser Turnierarchiv wächst.</h3><p>Hier erscheinen die abgeschlossenen Turniere.</p></div>'}<section class="panel club-join"><p class="eyebrow">MEHR ALS EIN TURNIER</p><h3>Werde Teil der Academy.</h3><p>Mitglied werden, gemeinsam spielen und das Vereinsleben mitgestalten.</p><p class="legend">Mitgliedsbeitrag: ${new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(annualFee(localDate().slice(0,4))/100)} pro Jahr.</p><button class="button light" data-view="membership">Zur Mitgliedschaft ↗</button></section></div>`;
 }
 export function tournamentsView(catalog,canManage){
-  const upcoming=catalog.filter(t=>!t.archived),archive=catalog.filter(t=>t.archived);
-  return `<div class="section-head"><div><p class="eyebrow">VOM ERSTEN WURF BIS INS ARCHIV</p><h2>Unsere Turniere.</h2><p>Das nächste Turnier planen. Vergangene Spiele wiederfinden.</p></div>${canManage?'<button class="button light" data-action="tournament-new">Turnier anlegen</button>':''}</div><h3 class="club-list-heading">Aktuelle & kommende Turniere</h3><div class="club-event-grid">${upcoming.map(tournamentCard).join('')||'<p>Aktuell ist kein weiteres Turnier eingetragen.</p>'}</div><h3 class="club-list-heading">Turnierarchiv</h3><div class="club-event-grid">${archive.map(tournamentCard).join('')||'<p>Hier erscheinen abgeschlossene Turniere.</p>'}</div>`;
+  const upcoming=catalog.filter(t=>!t.archived),archive=[];
+  return `<div class="section-head"><div><p class="eyebrow">VOM ERSTEN WURF BIS INS ARCHIV</p><h2>Unsere Turniere.</h2><p>Das nächste Turnier planen. Vergangene Spiele wiederfinden.</p></div>${canManage?'<button class="button light" data-action="tournament-new">Turnier anlegen</button>':''}</div><h3 class="club-list-heading">Aktuelle & kommende Turniere</h3><div class="club-event-grid">${upcoming.map(tournamentCard).join('')||'<p>Aktuell ist kein weiteres Turnier eingetragen.</p>'}</div>`;
 }
 export function externalArchiveView(t,view='overview'){
   const data=archives.get(t.id),qualified=new Set(data?.knockout.filter(m=>m.round==='Achtelfinale').flatMap(m=>[m.a,m.b])??[]);

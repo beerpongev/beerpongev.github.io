@@ -9,6 +9,7 @@ import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
 export const configured = firebaseConfig.apiKey !== 'HIER_EINTRAGEN' && firebaseConfig.projectId !== 'DEIN-PROJEKT';
 export const liveCacheKey = `beerpong-live-${firebaseConfig.projectId}`;
 let api, authApi, apps, db, auth, secondary, ref,demoGateOnly=false;
+export let historyApproved=false;
 let stopState=()=>{},stateCallbacks,stateGeneration=0;
 export const {transferRegistration,rebuildRegistrationClaims,reconcileExistingTeamPeople,listPersons,listPublicPlayers,savePublicPlayer,savePerson,linkMemberPerson,syncMemberParticipationAccount,listParticipations,listOwnParticipations,linkParticipationAccount,watchMyTeam,importHistoricalLineups,correctContributionPayment,listContributionTransactions,listBankReturnRisks,listDebitExports,recordDebitExport,setDebitExportStatus,getMembershipPDF,migrateMembershipPDFs,watchClubSettings,saveClubSettings}=createClubStore(()=>({api,db,auth,requireBoardAccount,liveOnly,linkMemberAccount}));
 function liveOnly(){if(demoGateOnly)throw new Error('Echte Daten und Kontovorgänge sind in der Online-Demo gesperrt.');}
@@ -48,10 +49,11 @@ export async function connect({ onState, onUser, onRole, onUsers, onConnection, 
   }
   let stopRole = () => {}, stopUsers = () => {};
   authApi.onAuthStateChanged(auth, user => {
-    stopRole(); stopUsers(); onUsers([]); onRole('guest',''); onUser(user);
+    historyApproved=false;stopRole(); stopUsers(); onUsers([]); onRole('guest',''); onUser(user);
     if (!user) return;
     stopRole = api.onSnapshot(api.doc(db, 'roles', user.uid), snap => {
       const role = snap.data()?.role ?? 'guest';
+      historyApproved=!!user&&!user.isAnonymous&&snap.exists()&&['guest','player','admin','board'].includes(role);
       onRole(role,snap.data()?.teamId??'',snap.data()?.tournamentId??tournamentId); stopUsers();onUsers([]);
       if (!demoGate&&role==='board') stopUsers = api.onSnapshot(api.collection(db, 'roles'), list => onUsers(list.docs.map(d => ({ uid: d.id, ...d.data() }))), onError);
     }, onError);
@@ -300,7 +302,19 @@ export async function saveMyProfile(input,expectedRevision){
 }
 export async function importPrivateRecords(input,onProgress=()=>{}){
  await requireBoardAccount();const data=validatePrivateImport(input);
- if(data.archiveLineups.length&&!data.members.length&&!data.registrations.length)return{addedMembers:0,addedEntries:0,addedArchiveSlots:await importHistoricalLineups(data.archiveLineups)};
+ const knownPeople=data.archiveSnapshots.length?await listPersons():[];
+ if(data.archiveSnapshots?.length)for(const snapshot of data.archiveSnapshots){
+  // Ausschließlich Sportdaten teilen; keine mitgelieferten Kontakt-/Bankfelder übernehmen.
+  const pick=(row,keys)=>Object.fromEntries(keys.filter(k=>row[k]!==undefined).map(k=>[k,row[k]]));
+  const sport=pick(snapshot,['id','sourceUrl','checkedOn','teamCount','totalMatches']);
+  sport.groups=snapshot.groups.map(g=>({letter:g.letter,teams:g.teams.map(t=>pick(t,['position','name','played','won','drawn','lost','score','diff','points']))}));
+  sport.placements=(snapshot.placements??[]).map(p=>pick(p,['position','name']));
+  sport.knockout=snapshot.knockout.map(m=>pick(m,['id','round','a','b','score']));
+  sport.groupMatches=(snapshot.groupMatches??[]).map(m=>pick(m,['id','group','round','a','b','score']));
+  sport.lineups=snapshot.lineups.map(p=>{const safe=pick(p,['personId','firstName','lastName','tournamentId','teamId','teamName','year','date','edition','slot']);const matches=knownPeople.filter(person=>(person.firstName+' '+person.lastName).trim().toLocaleLowerCase('de')===(p.firstName+' '+p.lastName).trim().toLocaleLowerCase('de'));if(p.firstName!=='Spieler'&&matches.length===1)safe.personId=matches[0].id;return safe;});
+  await api.setDoc(api.doc(db,'sportArchives',snapshot.id),{...sport,updatedAt:api.serverTimestamp()});
+ }
+ if((data.archiveLineups.length||data.archiveSnapshots.length)&&!data.members.length&&!data.registrations.length)return{addedMembers:0,addedEntries:0,addedArchiveSlots:data.archiveLineups.length?await importHistoricalLineups(data.archiveLineups):0};
  await initializeRegistration(data.tournamentId);
  const existingMembers=new Set((await listMembers()).map(m=>m.id)),existingEntries=new Set((await listRegistrations(data.tournamentId)).map(r=>r.id));
  let addedMembers=0,addedEntries=0;
@@ -310,3 +324,12 @@ export async function importPrivateRecords(input,onProgress=()=>{}){
 }
 
 export async function loadHistoryStates(catalog){liveOnly();if(!api||!db)return[];return Promise.all(catalog.filter(t=>t.archived&&!t.externalUrl).map(async t=>{const s=await api.getDoc(api.doc(db,'tournaments',t.id));return s.exists()?{meta:t,state:s.data()}:null;})).then(rows=>rows.filter(Boolean));}
+
+export async function listSportArchives(){liveOnly();if(!historyApproved)throw Error('Bitte mit einem freigegebenen persönlichen Konto anmelden.');const result=await api.getDocs(api.collection(db,'sportArchives'));return result.docs.map(d=>d.data());}
+export async function publishSportLineups(id){
+ await requireBoardAccount();
+ const current=(await api.getDoc(api.doc(db,'tournaments',id))).data();
+ const parts=(await listParticipations()).filter(p=>p.tournamentId===id);
+ const lineups=parts.map(p=>({...Object.fromEntries(['personId','firstName','lastName','tournamentId','teamId','teamName','year','date','edition','slot'].filter(k=>p[k]!==undefined).map(k=>[k,p[k]])),teamName:current?.teams?.find(t=>t.id===p.teamId)?.name??p.teamName}));
+ await api.setDoc(api.doc(db,'sportArchives',id),{id,groups:[],knockout:[],placements:[],lineups,updatedAt:api.serverTimestamp()});
+}
