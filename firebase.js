@@ -1,4 +1,6 @@
-import { firebaseConfig, tournamentId, useEmulators } from './config.js';
+import {createClubStore} from './club-store.js';
+import {normalizePrices} from './pricing.js';
+import { firebaseConfig, tournamentId, useEmulators, appCheckSiteKey } from './config.js';
 import { runStateTransaction } from './transaction.js';
 import {defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact} from './registration.js';
 import {validYear,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
@@ -8,6 +10,7 @@ export const configured = firebaseConfig.apiKey !== 'HIER_EINTRAGEN' && firebase
 export const liveCacheKey = `beerpong-live-${firebaseConfig.projectId}`;
 let api, authApi, apps, db, auth, secondary, ref,demoGateOnly=false;
 let stopState=()=>{},stateCallbacks,stateGeneration=0;
+export const {transferRegistration,rebuildRegistrationClaims,reconcileExistingTeamPeople,listPersons,listPublicPlayers,savePublicPlayer,savePerson,linkMemberPerson,syncMemberParticipationAccount,listParticipations,listOwnParticipations,linkParticipationAccount,watchMyTeam,importHistoricalLineups,correctContributionPayment,listContributionTransactions,listBankReturnRisks,listDebitExports,recordDebitExport,setDebitExportStatus,getMembershipPDF,migrateMembershipPDFs,watchClubSettings,saveClubSettings}=createClubStore(()=>({api,db,auth,requireBoardAccount,liveOnly,linkMemberAccount}));
 function liveOnly(){if(demoGateOnly)throw new Error('Echte Daten und Kontovorgänge sind in der Online-Demo gesperrt.');}
 async function requireBoardAccount(){
   liveOnly();
@@ -26,6 +29,7 @@ export async function connect({ onState, onUser, onRole, onUsers, onConnection, 
     import(`https://www.gstatic.com/firebasejs/${version}/firebase-firestore.js`)
   ]);
   const app = apps.initializeApp(firebaseConfig);
+  if(appCheckSiteKey&&!useEmulators&&!demoGate){const check=await import(`https://www.gstatic.com/firebasejs/${version}/firebase-app-check.js`);check.initializeAppCheck(app,{provider:new check.ReCaptchaV3Provider(appCheckSiteKey),isTokenAutoRefreshEnabled:true});}
   db = api.getFirestore(app); auth = authApi.getAuth(app);
   secondary = apps.initializeApp(firebaseConfig, 'account-creation');
   const secondaryAuth = authApi.initializeAuth(secondary, { persistence: authApi.inMemoryPersistence });
@@ -92,21 +96,22 @@ export const resetPassword=email=>{liveOnly();return authApi.sendPasswordResetEm
 
 // Private PDF-Ablage, getrennt vom öffentlich lesbaren Turnierdokument.
 export async function saveMembershipPDF(bytes, filename, data) {
-  liveOnly();
-  if(!db)throw new Error('Firebase ist noch nicht verbunden. Bitte kurz warten.');
-  if(bytes.length>900000)throw new Error('Der Antrag ist zu groß (maximal 900 KB).');
-  if(!auth.currentUser)await authApi.signInAnonymously(auth);
-  await api.addDoc(api.collection(db,'membershipApplications'),{
-    owner:auth.currentUser.uid,filename,pdf:api.Bytes.fromUint8Array(bytes),createdAt:api.serverTimestamp(),...(data?{data:normalizeApplication(data)}:{})
-  });
+ liveOnly();if(!db)throw Error('Firebase ist noch nicht verbunden.');
+ if(bytes.length>900000)throw Error('Der Antrag ist zu groß (maximal 900 KB).');
+ if(!auth.currentUser)await authApi.signInAnonymously(auth);
+ const id=crypto.randomUUID(),owner=auth.currentUser.uid;
+ await api.runTransaction(db,async tx=>{
+  tx.set(api.doc(db,'membershipApplications',id),{owner,filename,pdfStored:true,data:normalizeApplication(data),createdAt:api.serverTimestamp()});
+  tx.set(api.doc(db,'membershipApplicationPDFs',id),{owner,pdf:api.Bytes.fromUint8Array(bytes),createdAt:api.serverTimestamp()});
+ });
 }
 export async function listMemberships(){
   await requireBoardAccount();
   const [rows,reviews]=await Promise.all([api.getDocs(api.collection(db,'membershipApplications')),api.getDocs(api.collection(db,'membershipReviews'))]);
   const byId=new Map(reviews.docs.map(d=>[d.id,d.data()]));
-  return rows.docs.map(d=>({id:d.id,...d.data(),review:byId.get(d.id)??null})).sort((a,b)=>(b.createdAt?.seconds??0)-(a.createdAt?.seconds??0));
+  return rows.docs.map(d=>{const {pdf,...metadata}=d.data();return{id:d.id,...metadata,hasLegacyPDF:!!pdf,review:byId.get(d.id)??null};}).sort((a,b)=>(b.createdAt?.seconds??0)-(a.createdAt?.seconds??0));
 }
-export async function deleteMembership(id){liveOnly();await api.deleteDoc(api.doc(db,'membershipApplications',id));}
+export async function deleteMembership(id){await requireBoardAccount();await api.runTransaction(db,async tx=>{tx.delete(api.doc(db,'membershipApplications',id));tx.delete(api.doc(db,'membershipApplicationPDFs',id));});}
 
 /** Optimistische Konkurrenzkontrolle plus Firestore-Transaktion: kein Lost Update. */
 export async function mutate(transform, expectedRevision, { id, baseline, match } = {}) {
@@ -129,12 +134,13 @@ export async function createAccount({ email, name, role, teamId = '', tournament
   let created,roleCreated=false;
   try {
     created = (await authApi.createUserWithEmailAndPassword(secondaryAuth, email.trim(), secret)).user;
-    await api.setDoc(api.doc(db, 'roles', created.uid), { name: name.trim(), email: email.trim(), role, teamId:role==='player'?teamId:'',tournamentId:assignedTournament });
+    await api.setDoc(api.doc(db, 'roles', created.uid), { name: name.trim(), email: email.trim(), role, teamId,tournamentId:assignedTournament });
     roleCreated=true;
+    if(teamId)await api.setDoc(api.doc(db,'accountTeams',created.uid,'events',assignedTournament),{teamId,personId:'',updatedAt:api.serverTimestamp()});
     await authApi.sendPasswordResetEmail(secondaryAuth,email.trim(),{url:new URL('./',location.href).href});
   } catch (error) {
     if (created) {
-      if(roleCreated){try{await api.deleteDoc(api.doc(db,'roles',created.uid));}catch{/* Konto anschließend weiterhin löschen versuchen. */}}
+      if(roleCreated){try{if(teamId)await api.deleteDoc(api.doc(db,'accountTeams',created.uid,'events',assignedTournament));await api.deleteDoc(api.doc(db,'roles',created.uid));}catch{/* Konto anschließend weiterhin löschen versuchen. */}}
       try { await authApi.deleteUser(created); }
       catch { throw new Error(`Kontoeinladung fehlgeschlagen. Konto ${email} und dessen Rolle bitte in Firebase prüfen; die automatische Bereinigung war nicht vollständig möglich.`); }
     }
@@ -143,12 +149,18 @@ export async function createAccount({ email, name, role, teamId = '', tournament
   return created.uid;
 }
 export const inviteAccount=email=>{liveOnly();return requireBoardAccount().then(()=>authApi.sendPasswordResetEmail(auth,email.trim(),{url:new URL('./',location.href).href}));};
+export async function listAccounts(){await requireBoardAccount();const s=await api.getDocs(api.collection(db,'roles'));return s.docs.map(d=>({uid:d.id,...d.data()}));}
 
-export async function setRole(uid, data) {
-  liveOnly();
-  await requireBoardAccount();
-  if(uid.trim()===auth.currentUser.uid){const own=await api.getDoc(api.doc(db,'roles',uid.trim()));if(data.role!==own.data()?.role)throw new Error('Die eigene Leitungsrolle kann hier nicht geändert werden.');}
-  await api.setDoc(api.doc(db, 'roles', uid.trim()), { name: data.name.trim(), email: data.email.trim(), role: data.role,teamId:data.role==='player'?data.teamId:'',tournamentId:data.tournamentId??tournamentId });
+export async function setRole(uid,data){
+ await requireBoardAccount();uid=uid.trim();
+ await api.runTransaction(db,async tx=>{
+  const ref=api.doc(db,'roles',uid),old=await tx.get(ref);
+  if(uid===auth.currentUser.uid&&data.role!==old.data()?.role)throw Error('Die eigene Leitungsrolle kann hier nicht geändert werden.');
+  const previous=old.data(),id=data.tournamentId??tournamentId;
+  if(previous?.teamId&&(previous.tournamentId??tournamentId)!==id)tx.set(api.doc(db,'accountTeams',uid,'events',previous.tournamentId??tournamentId),{teamId:previous.teamId,personId:'',updatedAt:api.serverTimestamp()});
+  tx.set(ref,{name:data.name.trim(),email:data.email.trim(),role:data.role,teamId:data.teamId??'',tournamentId:id});
+  tx.set(api.doc(db,'accountTeams',uid,'events',id),{teamId:data.teamId??'',personId:'',updatedAt:api.serverTimestamp()});
+ });
 }
 
 const eventRef=id=>api.doc(db,'registrationEvents',id);
@@ -158,9 +170,9 @@ export async function initializeRegistration(id){
  await requireBoardAccount();checkRegistrationId(id);
  await api.runTransaction(db,async tx=>{const ref=eventRef(id),old=await tx.get(ref);if(!old.exists())tx.set(ref,{...defaultRegistrationSettings(),updatedAt:api.serverTimestamp()});});
 }
-export async function configureRegistration(id,{open,capacity}){
+export async function configureRegistration(id,{open,capacity,prices}){
  await requireBoardAccount();checkRegistrationId(id);
- await api.runTransaction(db,async tx=>{const ref=eventRef(id),old=await tx.get(ref);if(!old.exists())throw Error('Bitte zuerst die Anmeldung einrichten.');const s=old.data();if(!Number.isInteger(capacity)||capacity<1||capacity>32||capacity<s.confirmedCount)throw Error('Die Kapazität darf bestehende Startplätze nicht unterschreiten (maximal 32).');tx.set(ref,{...s,open:!!open,capacity,revision:s.revision+1,updatedAt:api.serverTimestamp()});});
+ await api.runTransaction(db,async tx=>{const ref=eventRef(id),old=await tx.get(ref);if(!old.exists())throw Error('Bitte zuerst die Anmeldung einrichten.');const s=old.data();if(!Number.isInteger(capacity)||capacity<1||capacity>32||capacity<s.confirmedCount)throw Error('Die Kapazität darf bestehende Startplätze nicht unterschreiten (maximal 32).');tx.set(ref,{...s,open:!!open,capacity,prices:normalizePrices(prices??s.prices),revision:s.revision+1,updatedAt:api.serverTimestamp()});});
 }
 /** Startplatz und laufende Wartelistennummer werden atomar vergeben. */
 export async function submitRegistration(id,input){
@@ -171,8 +183,14 @@ export async function submitRegistration(id,input){
   const [event,existing]=await Promise.all([tx.get(eventRef(id)),tx.get(ref)]);
   if(existing.exists())return{id:uid,...existing.data(),already:true};
   if(!event.exists()||!event.data().open)throw Error('Die Anmeldung ist derzeit geschlossen.');
-  const s=event.data(),status=s.confirmedCount<s.capacity&&s.waitlistCount===0?'confirmed':'waitlist';
-  const row={...data,owner:uid,status,sequence:s.nextSequence+1,source:'online',sourceDate:'',consent:true,createdAt:api.serverTimestamp(),updatedAt:api.serverTimestamp()};
+  const s=event.data();const checked=normalizeRegistration({...input,prices:s.prices});
+  if(input.website)throw Error('Die Anmeldung konnte nicht verarbeitet werden.');
+  const claimRefs=checked.players.map(p=>api.doc(db,'registrationClaims',id,'emails',p.email));
+  // Blind schreiben: vorhandene Zuordnungen lassen sich ohne Vorstandsrecht nicht überschreiben.
+  // Dadurch können Gäste auch nicht durch Abfragen feststellen, ob fremde E-Mails registriert sind.
+  const status=s.confirmedCount<s.capacity&&s.waitlistCount===0?'confirmed':'waitlist';
+  const row={...checked,owner:uid,status,sequence:s.nextSequence+1,source:'online',sourceDate:'',consent:true,createdAt:api.serverTimestamp(),updatedAt:api.serverTimestamp()};
+  for(const claim of claimRefs)tx.set(claim,{entryId:uid,owner:uid,createdAt:api.serverTimestamp()});
   tx.set(ref,row);tx.set(eventRef(id),{...reconcileSettings(s,null,{...row,id:uid}),updatedAt:api.serverTimestamp()});return{id:uid,...row};
  });
 }
@@ -184,10 +202,19 @@ export async function saveRegistration(id,input,{entryId,status='confirmed',sour
   const [event,existing]=await Promise.all([tx.get(eventRef(id)),tx.get(entryRef(id,key))]);
   if(!event.exists())throw Error('Bitte zuerst die Anmeldung einrichten.');const settings=event.data(),old=existing.exists()?existing.data():null;
   if(expectedUpdatedAt!==undefined&&(old?.updatedAt?.toMillis?.()??null)!==expectedUpdatedAt)throw Error('Die Anmeldung wurde inzwischen geändert. Bitte neu öffnen.');
-  const row={...data,owner:old?.owner??auth.currentUser.uid,status,sequence:old?.sequence??settings.nextSequence+1,source:old?.source??source,sourceDate:old?.sourceDate??sourceDate,consent:old?.consent??false,createdAt:old?.createdAt??api.serverTimestamp(),updatedAt:api.serverTimestamp()};
+  const row={...normalizeRegistration({...input,prices:input.prices??settings.prices},{board:true,allowMissingEmail:true}),owner:old?.owner??auth.currentUser.uid,status,sequence:old?.sequence??settings.nextSequence+1,source:old?.source??source,sourceDate:old?.sourceDate??sourceDate,consent:old?.consent??false,createdAt:old?.createdAt??api.serverTimestamp(),updatedAt:api.serverTimestamp()};
+  const emails=new Set([...(old?.players??[]),...row.players].map(p=>p.email).filter(Boolean));
+  const claims=await Promise.all([...emails].map(async email=>({email,ref:api.doc(db,'registrationClaims',id,'emails',email),snap:await tx.get(api.doc(db,'registrationClaims',id,'emails',email))})));
+  for(const claim of claims){
+   const needed=status!=='cancelled'&&row.players.some(p=>p.email===claim.email);
+   if(needed&&claim.snap.exists()&&claim.snap.data().entryId!==key)throw Error('Eine Person ist bereits in einer anderen Anmeldung eingetragen. Bitte die Dublette zuerst prüfen.');
+   if(needed)tx.set(claim.ref,{entryId:key,owner:row.owner,createdAt:claim.snap.data()?.createdAt??api.serverTimestamp()});
+   else if(claim.snap.data()?.entryId===key)tx.delete(claim.ref);
+  }
   tx.set(entryRef(id,key),row);tx.set(eventRef(id),{...reconcileSettings(settings,old,{...row,id:key}),updatedAt:api.serverTimestamp()});return{id:key,...row};
  });
 }
+export async function listContributions(year){await requireBoardAccount();if(!validYear(year))throw Error('Ungültiges Beitragsjahr.');const s=await api.getDocs(api.collection(db,'memberContributions',String(year),'entries'));return s.docs.map(d=>({id:d.id,...d.data()}));}
 export async function listMembers(){await requireBoardAccount();const snapshot=await api.getDocs(api.collection(db,'members'));return snapshot.docs.map(d=>({id:d.id,...d.data()}));}
 function contributionRef(memberId,year){if(!validYear(year)||!/^[a-zA-Z0-9_-]{1,128}$/.test(memberId))throw Error('Ungültige Mitglieds-ID oder Beitragsjahr.');return api.doc(db,'memberContributions',String(year),'entries',memberId);}
 export async function watchContributions(year,onRows,onError){await requireBoardAccount();if(!validYear(year))throw Error('Ungültiges Beitragsjahr.');return api.onSnapshot(api.collection(db,'memberContributions',String(year),'entries'),s=>onRows(s.docs.map(d=>({id:d.id,...d.data()}))),onError);}
@@ -203,15 +230,14 @@ export async function recordContributionPayment(memberId,year,row,kind){
   tx.set(ref,{...next,memberId,year:String(year),revision:(old.data()?.revision??-1)+1,updatedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});
   if(kind==='return')tx.update(api.doc(db,'members',memberId),{bankStatus:'unclear',bankNote:'Rücklastschrift vom '+row.date+' · Bankverbindung vor weiterem Einzug prüfen.',updatedAt:api.serverTimestamp()});
   const bank={date:row.date,amountCents:row.amountCents,name:String(row.name??'').slice(0,200),iban:String(row.iban??'').slice(0,80),purpose:String(row.purpose??'').slice(0,1000),reference:String(row.reference??'').slice(0,200),bookingText:String(row.bookingText??'').slice(0,200),mandate:String(row.mandate??'').slice(0,80),originalCents:row.originalCents??0};
-  tx.set(receipt,{...bank,memberId,year:String(year),kind,recordedBy:auth.currentUser.uid,createdAt:api.serverTimestamp()});return{duplicate:false};
+  tx.set(receipt,{...bank,memberId,year:String(year),kind,paidDelta:next.paidCents-current.paidCents,recordedBy:auth.currentUser.uid,createdAt:api.serverTimestamp()});return{duplicate:false};
  });
 }
-export async function listBankReturnRisks(){await requireBoardAccount();const snapshot=await api.getDocs(api.query(api.collection(db,'contributionTransactions'),api.where('kind','==','return')));return snapshot.docs.map(d=>({memberId:d.data().memberId,date:d.data().date,createdAt:d.data().createdAt}));}
-export async function listContributionTransactions(memberId){await requireBoardAccount();const snapshot=await api.getDocs(api.query(api.collection(db,'contributionTransactions'),api.where('memberId','==',memberId)));return snapshot.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>b.date.localeCompare(a.date));}
+
 export async function watchPrivateRegistry(id,{onEntries,onMembers,onError}){
  await requireBoardAccount();checkRegistrationId(id);
- const stopEntries=api.onSnapshot(api.collection(db,'tournamentRegistrations',id,'entries'),s=>onEntries(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.sequence-b.sequence)),onError);
- const stopMembers=api.onSnapshot(api.collection(db,'members'),s=>onMembers(s.docs.map(d=>({id:d.id,...d.data()}))),onError);
+ const stopEntries=typeof onEntries==='function'?api.onSnapshot(api.collection(db,'tournamentRegistrations',id,'entries'),s=>onEntries(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.sequence-b.sequence)),onError):()=>{};
+ const stopMembers=typeof onMembers==='function'?api.onSnapshot(api.collection(db,'members'),s=>onMembers(s.docs.map(d=>({id:d.id,...d.data()}))),onError):()=>{};
  return()=>{stopEntries();stopMembers();};
 }
 export async function saveMember(id,input,{expectedUpdatedAt}={}){
@@ -256,9 +282,13 @@ export async function linkMemberAccount(memberId,uid){
   if(!member.exists())throw Error('Mitglied nicht gefunden.');if(uid&&!role.exists())throw Error('Bitte ein vorhandenes Benutzerkonto auswählen.');
   if(profile?.exists()&&profile.data().memberId!==memberId)throw Error('Das Konto gehört bereits zu einem anderen Mitglied.');
   const old=member.data(),next=normalizeMember({...old,accountUid:uid});
+  const personRef=uid&&old.personId?api.doc(db,'persons',old.personId):null,person=personRef?await tx.get(personRef):null;
+  if(person?.data()?.accountUid&&person.data().accountUid!==uid)throw Error('Die Person ist bereits mit einem anderen Konto verbunden.');
+  if(person?.exists())tx.update(personRef,{accountUid:uid,updatedAt:api.serverTimestamp()});
   if(old.accountUid&&old.accountUid!==uid)tx.delete(api.doc(db,'memberProfiles',old.accountUid));
   tx.set(ref,{...next,updatedAt:api.serverTimestamp()});if(profileRef)tx.set(profileRef,{...memberProfile({id:memberId,...next},(profile?.data()?.revision??-1)+1),updatedAt:api.serverTimestamp()});
  });
+ if(uid)await syncMemberParticipationAccount(memberId,uid);
 }
 export function watchMyProfile(onProfile,onError){
  liveOnly();const user=auth?.currentUser;if(!user||user.isAnonymous){onProfile(null);return()=>{};}
@@ -276,3 +306,5 @@ export async function importPrivateRecords(input,onProgress=()=>{}){
  for(const row of data.registrations){if(existingEntries.has(row.id))continue;const{id,sourceDate,...fields}=row;const event=await api.getDoc(eventRef(data.tournamentId)),s=event.data();await saveRegistration(data.tournamentId,fields,{entryId:id,status:s.confirmedCount<s.capacity&&s.waitlistCount===0?'confirmed':'waitlist',source:'import',sourceDate});addedEntries++;onProgress(addedMembers,addedEntries);}
  return{addedMembers,addedEntries};
 }
+
+export async function loadHistoryStates(catalog){liveOnly();if(!api||!db)return[];return Promise.all(catalog.filter(t=>t.archived&&!t.externalUrl).map(async t=>{const s=await api.getDoc(api.doc(db,'tournaments',t.id));return s.exists()?{meta:t,state:s.data()}:null;})).then(rows=>rows.filter(Boolean));}

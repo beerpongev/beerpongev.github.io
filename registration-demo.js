@@ -1,15 +1,35 @@
 // Ausschließlich erfundene Beispieldaten im Arbeitsspeicher, keine echte Ablage.
+import {reverseBankPayment} from './bank-corrections.js';
 import {defaultRegistrationSettings,normalizeMember,normalizeRegistration,reconcileSettings,validatePrivateImport,applicationMember,memberProfile,normalizeContact} from './registration.js';
 import {normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
 export function createDemoRegistry(){
- const contributions=new Map(),transactions=new Map(),listeners=new Set();
+ const contributions=new Map(),transactions=new Map(),listeners=new Set(),persons=new Map(),publicPlayers=new Map(),participations=new Map(),corrections=new Map(),debitExports=new Map();let clubSettings={};
  const events=new Map(),entries=new Map(),members=new Map(),applications=[{id:'demo-application',filename:'Demo-Antrag.pdf',data:{firstName:'Mika',lastName:'Beispiel',birthDate:'2000-01-02',email:'mika@example.test',phone:'0123456789',street:'Beispielweg 1',postalCode:'21423',city:'Musterstadt',occupation:'',bank:'Beispielbank',iban:'DE89370400440532013000',accountHolder:'',applicationPlace:'Musterstadt',applicationDate:'2026-11-17',debitPlace:'Musterstadt',debitDate:'2026-11-17'}}];
  const getEvent=id=>{if(!events.has(id)){events.set(id,{...defaultRegistrationSettings(),open:true});entries.set(id,[]);}return events.get(id);};
  members.set('example-1',{id:'example-1',...normalizeMember({number:'D01',firstName:'Alex',lastName:'Beispiel',email:'alex@example.test',active:true})});
  members.set('example-2',{id:'example-2',...normalizeMember({number:'D02',firstName:'Kim',lastName:'Muster',email:'kim@example.test',active:false})});
  const copy=x=>structuredClone(x);
  const api={
+  reconcileExistingTeamPeople:async id=>{let count=0;for(const row of await api.listRegistrations(id))if(row.teamId&&row.status==='confirmed'){for(const [i,p]of row.players.entries()){const personId=p.personId||'demo-'+row.id+'-'+i;persons.set(personId,{id:personId,firstName:p.firstName,lastName:p.lastName,email:p.email,memberId:p.memberId??'',accountUid:'',aliases:[]});participations.set(id+'__'+row.teamId+'__'+(i+1),{personId,firstName:p.firstName,lastName:p.lastName,tournamentId:id,teamId:row.teamId,teamName:row.teamName,year:'2027',date:'2027-01-02',slot:i+1,edition:15,source:'registration',accountUid:''});}count++;}return{teams:count,linked:0,unmatched:count*2};},
+  rebuildRegistrationClaims:async id=>({emails:new Set((await api.listRegistrations(id)).filter(r=>r.status!=='cancelled').flatMap(r=>r.players.map(p=>p.email)).filter(Boolean)).size,duplicates:0}),
+  listPublicPlayers:async()=>copy([...publicPlayers.values()]),
+  savePublicPlayer:async(id,{published,displayName,aliases=[]})=>{if(!published){publicPlayers.delete(id);return;}publicPlayers.set(id,{id,displayName,aliases,appearances:[...participations.values()].filter(p=>p.personId===id).map(p=>({tournamentId:p.tournamentId,teamName:p.teamName,year:p.year}))});},
+  listPersons:async()=>copy([...persons.values()]),
+  listParticipations:async()=>copy([...participations.values()]),
+  listOwnParticipations:async()=>copy([...participations.values()].filter(p=>p.accountUid==='demo-member')),
+  loadHistoryStates:async()=>[],
+  linkMemberPerson:async(memberId,personId)=>{const m=members.get(memberId),p=persons.get(personId);if(!m||!p)throw Error('Mitglied oder Person fehlt.');m.personId=personId;p.memberId=memberId;},
+  listContributions:async year=>copy([...contributions.values()].filter(c=>c.year===String(year))),
+  getClubSettings:()=>copy(clubSettings),
+  savePerson:async(id,p)=>persons.set(id,copy({...p,id})),
+  saveClubSettings:async(value,{expectedRevision}={})=>{const revision=clubSettings.revision??-1;if(expectedRevision!==undefined&&expectedRevision!==revision)throw Error('Vereinsangaben wurden geändert.');clubSettings=copy({...value,revision:revision+1});return copy(clubSettings);},
+  listDebitExports:async()=>copy([...debitExports.values()]),
+  recordDebitExport:async report=>{const id=crypto.randomUUID();debitExports.set(id,{id,year:report.year,purpose:report.purpose,totalCents:report.totalCents,items:report.rows.map(r=>({memberId:r.memberId,name:r.memberName,amountCents:r.amountCents,mandate:r.mandate})),status:'prepared',revision:0});return id;},
+  setDebitExportStatus:async(id,status,revision)=>{const row=debitExports.get(id);if(!row||row.revision!==revision||row.status!=='prepared')throw Error('Export wurde geändert.');Object.assign(row,{status,revision:revision+1});},
+  migrateMembershipPDFs:async()=>0,
+  importHistoricalLineups:async items=>{for(const p of items){const id=p.personId||crypto.randomUUID();if(!persons.has(id))persons.set(id,{id,firstName:p.firstName,lastName:p.lastName,email:'',aliases:[],memberId:'',accountUid:''});participations.set(p.assignmentId+'__'+p.slot,{...p,personId:id,accountUid:''});}return items.length;},
+  correctContributionPayment:async(id,{reason,targetMemberId='',targetYear=''}={})=>{const r=transactions.get(id);if(!r||corrections.has(id)||!reason?.trim())throw Error('Buchung oder Begründung prüfen.');const key=r.year+'/'+r.memberId,current=contributions.get(key),reversed=reverseBankPayment(current,r);let next;if(targetMemberId){const before=contributions.get(targetYear+'/'+targetMemberId)??legacyContribution(members.get(targetMemberId),targetYear);next=applyBankPayment(before,{...r,date:before.date>r.date?before.date:r.date},r.kind);transactions.set(id+'-reassigned',{...r,id:id+'-reassigned',memberId:targetMemberId,year:targetYear,paidDelta:next.paidCents-before.paidCents});}contributions.set(key,{...reversed,memberId:r.memberId,year:r.year,revision:current.revision+1});if(next)contributions.set(targetYear+'/'+targetMemberId,{...next,memberId:targetMemberId,year:targetYear,revision:(contributions.get(targetYear+'/'+targetMemberId)?.revision??-1)+1});corrections.set(id,{reason,replacementId:next?id+'-reassigned':''});listeners.forEach(fn=>fn());},
   getSettings:id=>copy(getEvent(id)),
   initializeRegistration:async id=>{getEvent(id);},
   configureRegistration:async(id,patch)=>{const s=getEvent(id);if(patch.capacity<s.confirmedCount||patch.capacity<1||patch.capacity>32)throw Error('Ungültige Kapazität.');Object.assign(s,patch,{revision:s.revision+1});},
@@ -17,15 +37,15 @@ export function createDemoRegistry(){
   listRegistrations:async id=>{getEvent(id);return copy(entries.get(id));},
   saveRegistration:async(id,input,{entryId,status='confirmed',source='board',sourceDate=''}={})=>{
    const s=getEvent(id),rows=entries.get(id),old=rows.find(r=>r.id===entryId),key=entryId??crypto.randomUUID();
-   const row={...normalizeRegistration(input,{board:true,allowMissingEmail:true}),id:key,status,sequence:old?.sequence??s.nextSequence+1,source:old?.source??source,sourceDate:old?.sourceDate??sourceDate};
+   const row={...normalizeRegistration({...input,prices:input.prices??s.prices},{board:true,allowMissingEmail:true}),id:key,status,sequence:old?.sequence??s.nextSequence+1,source:old?.source??source,sourceDate:old?.sourceDate??sourceDate};
    events.set(id,reconcileSettings(s,old,row));if(old)Object.assign(old,row);else rows.push(row);return copy(row);
   },
   listMembers:async()=>copy([...members.values()]),
   watchContributions:async(year,callback)=>{const fn=()=>callback(copy([...contributions.values()].filter(r=>r.year===String(year))));listeners.add(fn);fn();return()=>listeners.delete(fn);},
   saveContribution:async(memberId,year,input,revision)=>{const key=year+'/'+memberId,old=contributions.get(key);if((old?.revision??-1)!==revision)throw Error('Der Beitrag wurde inzwischen geändert.');contributions.set(key,{...normalizeContribution(input),memberId,year:String(year),revision:revision+1});listeners.forEach(fn=>fn());},
-  recordContributionPayment:async(memberId,year,row,kind)=>{if(transactions.has(row.id))return{duplicate:true};const key=year+'/'+memberId,current=contributions.get(key)??legacyContribution(members.get(memberId),year),next=applyBankPayment(current,row,kind);contributions.set(key,{...next,memberId,year:String(year),revision:current.revision+1});transactions.set(row.id,{...copy(row),memberId,year:String(year),kind,createdAt:Date.now()});if(kind==='return'){Object.assign(members.get(memberId),{bankStatus:'unclear',bankNote:'Rücklastschrift vom '+row.date+' · Bankverbindung prüfen.'});}listeners.forEach(fn=>fn());return{duplicate:false};},
-  listBankReturnRisks:async()=>copy([...transactions.values()].filter(r=>r.kind==='return').map(r=>({memberId:r.memberId,date:r.date,createdAt:r.createdAt}))),
-  listContributionTransactions:async memberId=>copy([...transactions.values()].filter(r=>r.memberId===memberId)),
+  recordContributionPayment:async(memberId,year,row,kind)=>{if(transactions.has(row.id))return{duplicate:true};const key=year+'/'+memberId,current=contributions.get(key)??legacyContribution(members.get(memberId),year),next=applyBankPayment(current,row,kind);contributions.set(key,{...next,memberId,year:String(year),revision:current.revision+1});transactions.set(row.id,{...copy(row),memberId,year:String(year),kind,paidDelta:next.paidCents-current.paidCents,createdAt:Date.now()});if(kind==='return'){Object.assign(members.get(memberId),{bankStatus:'unclear',bankNote:'Rücklastschrift vom '+row.date+' · Bankverbindung prüfen.'});}listeners.forEach(fn=>fn());return{duplicate:false};},
+  listBankReturnRisks:async()=>copy([...transactions.values()].filter(r=>r.kind==='return'&&!corrections.has(r.id)).map(r=>({memberId:r.memberId,date:r.date,createdAt:r.createdAt}))),
+  listContributionTransactions:async memberId=>copy([...transactions.entries()].filter(([,r])=>r.memberId===memberId).map(([id,r])=>({...r,id,correction:corrections.get(id)??null}))),
   listMemberships:async()=>copy(applications),
   deleteMembership:async id=>{const i=applications.findIndex(a=>a.id===id);if(i>=0)applications.splice(i,1);},
   acceptMembership:async(id,options)=>{const a=applications.find(a=>a.id===id);if(!a||a.review)throw Error('Antrag fehlt oder wurde bereits bearbeitet.');const key=options.memberId||'application-'+id,m=applicationMember(options.data??a.data,{id:key,existing:members.get(key),number:options.number,joined:options.joined,applicationId:id});if(!members.has(key)){const n=nextMandate(mandateYear(m.joined),mandateSequence([...members.values()]));m.number=String(n.number);m.mandate=n.reference;}members.set(key,m);a.review={status:'accepted',memberId:key};return key;},

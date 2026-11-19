@@ -13,3 +13,6 @@ export const firebaseConfig = {
 export const tournamentId = "main";
 // Nur für lokale Security-Rules-Tests. Im veröffentlichten Betrieb false lassen.
 export const useEmulators = false;
+
+// Optional: öffentlicher reCAPTCHA-v3-Siteschlüssel für Firebase App Check. Danach in Firebase die Erzwingung aktivieren.
+export const appCheckSiteKey = '';

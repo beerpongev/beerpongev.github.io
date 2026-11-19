@@ -1,3 +1,7 @@
+import {installUpdates} from './updates.js';
+import {createClubAdministration,legalView} from './club-admin-ui.js';
+import {setActivePrices,setContributionRates} from './pricing.js';
+import {transferRegistrationTeam} from './team-transfer.js';
 import * as E from './engine.js';
 import * as cloud from './firebase.js';
 import {createDemoRegistry} from './registration-demo.js';
@@ -7,24 +11,25 @@ import {escapeHTML as e,localDate} from './ui.js';
 import {parseTeamsCSV,validateBackup} from './data.js';
 import {loadDocuments,rulesView,bindDocumentSearch,documentPages} from './documents.js';
 import {membershipView,bindMembership} from './membership.js';
-import {DEFAULT_TOURNAMENTS,mergeTournamentCatalog,validTournamentId,validateTournamentInfo,tournamentDate,homeView,tournamentsView,externalArchiveView,loadClubArchive,bindArchiveGames} from './club.js';
+import {DEFAULT_TOURNAMENTS,mergeTournamentCatalog,validTournamentId,validateTournamentInfo,tournamentDate,homeView,tournamentsView,externalArchiveView,loadClubArchive,getClubArchives,bindArchiveGames} from './club.js';
 
 const $=s=>document.querySelector(s),localDemo=!cloud.configured,onlineDemoRequested=cloud.configured&&new URL(location.href).searchParams.get('demo')==='1';
 const DEMO_BASE_KEY=onlineDemoRequested?'beerpong-board-demo-'+cloud.liveCacheKey:'beerpong-demo-v2';
 let catalog=mergeTournamentCatalog(),catalogLoaded=localDemo,selectedTournamentId=validTournamentId(new URL(location.href).searchParams.get('turnier'))?new URL(location.href).searchParams.get('turnier'):'main';
 let DEMO_KEY=selectedTournamentId==='main'?DEMO_BASE_KEY:DEMO_BASE_KEY+'-'+selectedTournamentId;
-let assignedTeamId='',assignedTournamentId='main',cloudReady=false;
+let assignedTeamId='',assignedTournamentId='main',cloudReady=false,requestedLiveId=null,stopOwnTeam=()=>{},clubSettings={};
 const currentTournament=()=>catalog.find(t=>t.id===selectedTournamentId);
 const isReadOnly=()=>!currentTournament()||currentTournament().archived||!!currentTournament().externalUrl;
 const stateCacheKey=()=>selectedTournamentId==='main'?cloud.liveCacheKey:cloud.liveCacheKey+'-'+selectedTournamentId;
 let demo=localDemo,demoAuthorized=false,demoGateError='',demoAccessRole='guest';
 let state=null,role='guest',teamId='',user=null,users=[],synced=false,busy=false;
-const routeNames={home:'startseite',tournaments:'turniere',overview:'turnier',groups:'gruppen',bracket:'ko',teams:'teams',rules:'regelwerk',membership:'mitgliedschaft',admin:'spielleitung',board:'vorstand',registration:'anmeldung',registrations:'anmeldungen-verwalten',members:'mitglieder-verwalten',applications:'antraege',profile:'meine-daten',games:'ergebnisse'};
+const routeNames={home:'startseite',tournaments:'turniere',overview:'turnier',groups:'gruppen',bracket:'ko',teams:'teams',rules:'regelwerk',membership:'mitgliedschaft',admin:'spielleitung',board:'vorstand',registration:'anmeldung',registrations:'anmeldungen-verwalten',members:'mitglieder-verwalten',applications:'antraege',profile:'meine-daten',games:'ergebnisse',history:'historie',people:'personen',imprint:'impressum',privacy:'datenschutz'};
 function routeView(){return Object.keys(routeNames).find(k=>routeNames[k]===new URL(location.href).searchParams.get('bereich'))??(new URL(location.href).searchParams.has('turnier')?'overview':'home');}
 let view=routeView();
 let groupFilter='all',roundFilter='r16',gameFilter='open',tableFilter='all',search='',matchLimit=12,ownOnly=false,teamMode='teams';
 let modal={},installEvent,toastTimer,privateApplications=[];
-let playerCalloutMarkup='';
+let playerCalloutMarkup='',archiveLoad,clubRenderIdentity='';
+function ensureArchives(){return archiveLoad??=loadClubArchive();}
 const admin=()=>['admin','board'].includes(role),board=()=>role==='board'&&(!onlineDemoRequested||demoAccessRole==='board');
 const demoRoles=()=>['guest','player','admin',...(!onlineDemoRequested||demoAccessRole==='board'?['board']:[])];
 const writable=()=>!busy&&!isReadOnly()&&(demo||(synced&&navigator.onLine))&&['board','admin','player'].includes(role);
@@ -38,6 +43,7 @@ const roleLabel=r=>({guest:'Zuschauer',player:'Mitspieler',admin:'Spielleitung',
 function toast(message){clearTimeout(toastTimer);$('#toast').textContent=message;$('#toast').hidden=false;toastTimer=setTimeout(()=>{$('#toast').hidden=true;},7000);}
 const demoRegistry=createDemoRegistry();
 let registrationSettings={};
+const clubAdministration=createClubAdministration({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,isBoard:board,signedIn:()=>!!user&&!user.isAnonymous,settings:()=>clubSettings,applySettings:settings=>{clubSettings=settings;setContributionRates(settings.contributionRates);},eventSettings:()=>registrationEvent(selectedTournamentId),tournamentId:()=>selectedTournamentId,catalog:()=>catalog,archives:getClubArchives,ensureArchives,toast});
 const registrationEvent=id=>demo?demoRegistry.getSettings(id):registrationSettings[id];
 const registryManagement=createRegistryManagement({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,isBoard:board,settings:registrationEvent,settingsChanged:()=>render(),toast,transferTeam,invitePlayers,accountLink:m=>memberWorkflows.accountLink(m)});
 const memberWorkflows=createMemberWorkflows({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,isBoard:board,user:()=>user,users:()=>users,toast,dialog:openDialog,closeDialog:()=>$('#dialog').close(),download:downloadPrivatePDF,downloadAll:rows=>downloadMemberships(rows),refreshRegistry:()=>{view='members';render(true);}});
@@ -47,16 +53,10 @@ async function transferTeam(row,{invite=false}={}){
  if(!state||state.phase!=='setup')throw Error('Bitte zuerst einen Spielplan anlegen. Teams können nur vor dem Start der Gruppenphase übernommen werden.');
  let targetId=row.teamId||`reg-${row.id}`;
  if(!row.teamId){const existing=state.teams.find(t=>nameKeyForTeam(t.name)===nameKeyForTeam(row.teamName));if(existing){if(!confirm(`Das Team „${existing.name}“ existiert bereits mit ${existing.p1||'Person 1 offen'} und ${existing.p2||'Person 2 offen'}. Mit der Anmeldung von ${row.players.map(p=>p.firstName+' '+p.lastName).join(' und ')} verknüpfen? Team-ID und Gruppe bleiben erhalten; öffentlich werden die Vornamen übernommen.`))throw Error('Übernahme abgebrochen.');targetId=existing.id;}}
- await adminCommit(s=>{
-  const next=E.clone(s);if(next.phase!=='setup')throw Error('Die Gruppenphase wurde inzwischen gestartet.');
-  let existing=next.teams.find(t=>t.id===targetId);
-  const sameName=next.teams.find(t=>nameKeyForTeam(t.name)===nameKeyForTeam(row.teamName)&&t.id!==targetId);
-  if(sameName)throw Error('Ein Team mit diesem Namen existiert bereits. Bitte dessen Zuordnung und Namen zuerst prüfen.');
-  if(!existing){existing=next.teams.find(t=>!t.p1&&!t.p2);if(existing)targetId=existing.id;}
-  const fields={id:targetId,name:row.teamName,p1:row.players[0].firstName,p2:row.players[1].firstName,group:existing?.group??''};
-  if(existing)Object.assign(existing,fields);else{if(next.teams.length>=32)throw Error('Der Spielplan enthält bereits 32 ausgefüllte Teams. Bitte vorhandene Teamplätze zuerst prüfen.');next.teams.push(fields);}return next;
- });
- await(demo?demoRegistry:cloud).saveRegistration(selectedTournamentId,{...row,teamId:targetId},{entryId:row.id,status:row.status});
+ const result=demo?transferRegistrationTeam(state,row,targetId):await cloud.transferRegistration(selectedTournamentId,row.id,targetId,{expectedRevision:state.revision,expectedUpdatedAt:row.updatedAt?.toMillis?.()??null});
+ targetId=result.teamId;
+ if(demo){await adminCommit(()=>result.state);await demoRegistry.saveRegistration(selectedTournamentId,{...row,teamId:targetId},{entryId:row.id,status:row.status});}
+ 
  if(invite&&!demo){try{await invitePlayers({...row,teamId:targetId},{ask:false});}catch(error){throw Error('Team wurde übernommen. Die Einladungen waren nicht vollständig erfolgreich: '+humanError(error)+' Bitte über Spielerkonten einladen fortsetzen.');}}
 }
 const nameKeyForTeam=value=>value.trim().toLocaleLowerCase('de');
@@ -65,11 +65,14 @@ async function invitePlayers(row,{ask=true}={}){
  if(!board()||!row.teamId||row.status!=='confirmed')throw Error('Bitte zuerst das bestätigte Team in den Spielplan übernehmen.');
  if(row.players.some(p=>!p.email)||row.players[0].email===row.players[1].email)throw Error('Bitte zwei unterschiedliche persönliche E-Mail-Adressen ergänzen.');
  if(ask&&!confirm(`Spielerkonten für ${row.players.map(p=>p.email).join(' und ')} mit diesem Team verknüpfen? Neue Konten erhalten per E-Mail einen Passwortlink. Bestehende Spielerkonten erhalten die neue Teamzuordnung.`))return;
- for(const person of row.players){
+ const identities=await cloud.listPersons(),directory=users.length?users:await cloud.listAccounts();
+ for(const [slot,person] of row.players.entries()){
   if(!board())throw Error('Vorstandsberechtigung fehlt.');
-  const existing=users.find(u=>u.email.toLowerCase()===person.email.toLowerCase()),data={name:`${person.firstName} ${person.lastName}`,email:person.email,role:'player',teamId:row.teamId,tournamentId:selectedTournamentId};
-  if(existing&&['board','admin'].includes(existing.role)){toast('Das Leitungskonto '+person.email+' behält seine vorhandenen Rechte.');continue;}
-  if(existing)await cloud.setRole(existing.uid,data);else await cloud.createAccount(data);
+  const identity=identities.find(p=>p.id===person.personId)||identities.find(p=>p.email?.toLowerCase()===person.email.toLowerCase());
+  const existing=directory.find(u=>u.uid===identity?.accountUid)||directory.find(u=>u.email.toLowerCase()===person.email.toLowerCase()),data={name:`${person.firstName} ${person.lastName}`,email:person.email,role:'player',teamId:row.teamId,tournamentId:selectedTournamentId};
+  if(identity?.accountUid&&!existing)throw Error('Das zugeordnete Benutzerkonto fehlt. Bitte zuerst die Benutzer-/Personenverknüpfung prüfen.');
+  if(existing)data.email=existing.email; // Kontakt-E-Mail und unveränderte Anmeldeadresse auseinanderhalten.
+  if(existing){await cloud.setRole(existing.uid,{...data,role:existing.role==='guest'?'player':existing.role});await cloud.linkParticipationAccount(selectedTournamentId,row.teamId,slot+1,existing.uid);}else{const uid=await cloud.createAccount(data);await cloud.linkParticipationAccount(selectedTournamentId,row.teamId,slot+1,uid);}
  }
 }
 function humanError(error){return({'auth/invalid-credential':'E-Mail oder Passwort stimmt nicht.','auth/invalid-email':'Bitte eine gültige E-Mail-Adresse eingeben.','auth/email-already-in-use':'Das Konto existiert bereits. Bitte dessen UID über „Vorhandenes Konto zuweisen“ verknüpfen.','auth/weak-password':'Bitte ein stärkeres Passwort verwenden.','auth/requires-recent-login':'Bitte erneut anmelden und die Aktion wiederholen.','auth/unauthorized-continue-uri':'Bitte beerpongev.github.io unter Firebase Authentication → Einstellungen → Autorisierte Domains hinzufügen.','auth/too-many-requests':'Zu viele Versuche. Bitte kurz warten.','permission-denied':'Keine Berechtigung. Bitte Teamzuordnung, Selbsteingabe und veröffentlichte Firestore-Regeln prüfen.','unavailable':'Keine Verbindung zu Firebase. Änderungen benötigen Internet.'})[error.code]??error.message??'Aktion fehlgeschlagen.';}
@@ -95,31 +98,36 @@ function adminCommit(transform,revision=state?.revision){if(!admin())throw new E
 function updateDemoKey(){DEMO_KEY=selectedTournamentId==='main'?DEMO_BASE_KEY:DEMO_BASE_KEY+'-'+selectedTournamentId;}
 function loadDemoCatalog(){try{catalog=mergeTournamentCatalog(JSON.parse(localStorage.getItem(DEMO_BASE_KEY+'-catalog'))??[]);}catch{catalog=mergeTournamentCatalog();}catalogLoaded=true;}
 function saveDemoCatalog(info,id){catalog=mergeTournamentCatalog([...catalog,{...info,id}]);localStorage.setItem(DEMO_BASE_KEY+'-catalog',JSON.stringify(catalog));}
-function refreshOwnTeam(){teamId=role==='player'&&(demo||assignedTournamentId===selectedTournamentId)?demo?teamId:assignedTeamId:'';}
+function needsLiveState(){return ['overview','groups','bracket','teams','admin','board','registrations'].includes(view)||!!assignedTeamId&&['player','admin','board'].includes(role);}
+function syncLiveState(){if(!cloudReady||demo||onlineDemoRequested)return;const id=needsLiveState()&&!currentTournament()?.externalUrl?selectedTournamentId:null;if(id===requestedLiveId)return;requestedLiveId=id;cloud.selectTournament(id);}
+function refreshOwnTeam(){teamId=['player','admin','board'].includes(role)&&(demo||assignedTournamentId===selectedTournamentId)?demo?teamId:assignedTeamId:'';}
+function watchOwnTeam(){stopOwnTeam();stopOwnTeam=()=>{};if(demo||!cloudReady||!user||user.isAnonymous)return;const id=selectedTournamentId;stopOwnTeam=cloud.watchMyTeam(id,link=>{if(id!==selectedTournamentId)return;if(link){assignedTeamId=link.teamId;assignedTournamentId=id;}refreshOwnTeam();render();},err=>toast(humanError(err)));}
 function readStateCache(){state=null;try{const saved=JSON.parse(localStorage.getItem(stateCacheKey()));if(saved?.schema===2)state=validateBackup({format:'beerpong-v2',state:saved});}catch{/* Öffentlicher Lesecache. */}}
 function syncLocation(push=false){
   const url=new URL(location.href);url.searchParams.delete('bereich');url.searchParams.delete('turnier');
   if(view!=='home')url.searchParams.set('bereich',routeNames[view]??'turnier');
-  if(!['home','tournaments','rules','membership'].includes(view))url.searchParams.set('turnier',selectedTournamentId);
+  if(!['home','tournaments','rules','membership','history','imprint','privacy'].includes(view))url.searchParams.set('turnier',selectedTournamentId);
   if(url.href!==location.href)history[push?'pushState':'replaceState']({},'',url);
 }
 function navigateView(next){
   if(busy)return;
   if(!Object.hasOwn(routeNames,next))return;
   if(['admin','registrations'].includes(next)&&isReadOnly()){
-    const active=catalog.find(t=>!t.archived&&!t.externalUrl);if(active){void chooseTournament(active.id).then(()=>{view=next;syncLocation(true);render(true);});return;}
+    const active=catalog.find(t=>!t.archived&&!t.externalUrl);if(active){void chooseTournament(active.id).then(()=>{if(['history','people'].includes(next)||currentTournament()?.externalUrl)void ensureArchives().then(()=>{if(['history','people'].includes(view))render(true);});
+  view=next;syncLocation(true);render(true);});return;}
   }
   view=next;syncLocation(true);render(true);window.scrollTo(0,0);
 }
 async function chooseTournament(id,keepBoard=false){
   if(busy)return;
   if(!catalog.some(t=>t.id===id)){toast('Dieses Turnier ist nicht bekannt.');return;}
+  if(catalog.find(t=>t.id===id)?.externalUrl)void ensureArchives().then(()=>render(true));
   $('#dialog').close();selectedTournamentId=id;state=null;synced=false;teamId='';refreshOwnTeam();
   groupFilter='all';roundFilter='r16';gameFilter=isReadOnly()?'done':'open';tableFilter='all';ownOnly=false;search='';matchLimit=12;
   view=keepBoard&&board()?'board':'overview';updateDemoKey();
   if(demo){if(!currentTournament().externalUrl)loadDemoState();if(role==='player')teamId=state?.teams[0]?.id??'';}
-  else{readStateCache();if(cloudReady)cloud.selectTournament(currentTournament().externalUrl?null:id);}
-  syncLocation(true);render(true);window.scrollTo(0,0);
+  else{readStateCache();if(cloudReady)syncLiveState();}
+  watchOwnTeam();syncLocation(true);render(true);window.scrollTo(0,0);
 }
 function renderTournamentNavigation(){
   const show=['overview','groups','bracket','teams','admin','board','registrations','games'].includes(view),meta=currentTournament();
@@ -179,21 +187,26 @@ function renderDemoGate(){
 }
 function updateDemoToolbarHeight(){const banner=$('#mode-banner');document.body.style.setProperty('--demo-toolbar-height',onlineDemoRequested&&demoAuthorized?`${Math.ceil(banner.getBoundingClientRect().height)}px`:'0px');}
 function render(force=false){
+  const identity=(user?.uid??'')+'|'+role+'|'+demo;
+  if(identity!==clubRenderIdentity){clubRenderIdentity=identity;clubAdministration.clear();if($('#club-feature-root'))$('#main').replaceChildren();force=true;}
   if(onlineDemoRequested&&!demoAuthorized){renderDemoGate();return;}
   $('.tabs').hidden=false;
+  syncLiveState();
   renderTournamentNavigation();
   document.body.classList.toggle('archive-view',isReadOnly());
-  $('#connection').textContent=demo?(onlineDemoRequested?'Online-Demo':'Lokale Demo'):synced&&navigator.onLine?'Live verbunden':'Verbindung unterbrochen';$('#connection').classList.toggle('online',!demo&&synced&&navigator.onLine);
+  $('#connection').textContent=demo?(onlineDemoRequested?'Online-Demo':'Lokale Demo'):cloudReady&&!needsLiveState()?'Vereinsseite':synced&&navigator.onLine?'Live verbunden':'Verbindung unterbrochen';$('#connection').classList.toggle('online',!demo&&synced&&navigator.onLine);
   $('#login-button').textContent=user&&!user.isAnonymous?'Konto ↗':'Anmelden ↗';$('#admin-tab').hidden=!admin();$('#board-tab').hidden=!board();
-  if(view==='admin'&&!admin()||['board','registrations','members','applications'].includes(view)&&!board())view='overview';
+  if(view==='admin'&&!admin()||['board','registrations','members','applications','people'].includes(view)&&!board())view='overview';
   if(!board()||!['registrations','members'].includes(view))registryManagement.clear();
   if(!['applications','profile'].includes(view))memberWorkflows.clear();
+  if(!['board','people','history'].includes(view))clubAdministration.clear();
+  setActivePrices(registrationEvent(selectedTournamentId)?.prices);
   $('#profile-tab').hidden=!demo&&(!user||user.isAnonymous);
   document.querySelectorAll('[data-view]').forEach(b=>{if(b.dataset.view===view)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
   const phase=['home','tournaments','rules','membership','board'].includes(view)?'':currentTournament()?.archived?'Archiv':state?E.LABELS[state.phase]:'';
   $('#phase-badge').textContent=phase??'';
   $('#phase-badge').hidden=!phase;
-  $('#mode-banner').hidden=!demo&&synced&&navigator.onLine;
+  $('#mode-banner').hidden=!demo&&(synced||cloudReady&&!needsLiveState())&&navigator.onLine;
   document.body.classList.toggle('online-demo',onlineDemoRequested&&demoAuthorized);
   $('#mode-banner').innerHTML=demo?`DEMO · Beispieldaten nur in diesem Browser. ${onlineDemoRequested?`<a class="demo-exit" href="${e(liveAppURL())}">Zum Live-Turnier ↗</a>`:''}<label>Ansicht testen <select id="demo-role"><option value="guest" ${role==='guest'?'selected':''}>Zuschauer</option><option value="player" ${role==='player'?'selected':''}>Mitspieler</option><option value="admin" ${role==='admin'?'selected':''}>Spielleitung</option>${demoRoles().includes('board')?`<option value="board" ${board()?'selected':''}>Vorstand</option>`:''}</select></label>${role==='player'&&state?`<label>Dein Team <select id="demo-team">${state.teams.map(t=>`<option value="${e(t.id)}" ${teamId===t.id?'selected':''}>${e(t.name)}</option>`).join('')}</select></label>`:''}`:'Verbindung wird hergestellt oder ist unterbrochen. Der Stand kann veraltet sein; Änderungen sind gesperrt.';
   // Live-Updates dürfen keine Unterschriften oder ungesendeten Antragsdaten löschen.
@@ -204,6 +217,7 @@ function render(force=false){
   if(!force&&view==='registration'&&$('#registration-root')){if(currentTournament()?.archived||registrationEvent(selectedTournamentId)?.open&&!$('#tournament-registration-form')){render(true);return;}refreshRegistrationAvailability(currentTournament(),registrationEvent(selectedTournamentId));return;}
   if(!force&&['registrations','members'].includes(view)&&$('#registry-management')){registryManagement.refresh();return;}
   if(!force&&['applications','profile'].includes(view)&&$('#member-workflow-root'))return;
+  if(!force&&['board','people','history'].includes(view)&&$('#club-feature-root')){if(view==='board'){if($('#board-accounts'))$('#board-accounts').innerHTML=accountManagementView();if($('#board-event-meta'))$('#board-event-meta').innerHTML=boardTournamentPanel();}return;}
   if(!force&&view==='membership'&&$('#membership-root'))return;
   if(!force&&view==='rules'&&$('#document-selector'))return;
   const details=[...document.querySelectorAll('#main details[open][data-detail]')].map(d=>d.dataset.detail);
@@ -212,7 +226,9 @@ function render(force=false){
   if(view==='tournaments'){$('#main').innerHTML=tournamentsView(catalog,board());return;}
   if(view==='rules'){$('#main').innerHTML=rulesView();bindDocumentSearch();return;}
   if(view==='membership'){$('#main').innerHTML=membershipView();bindMembership({demo});bindDocumentSearch();return;}
-  if(view==='board'){$('#main').innerHTML=boardView();return;}
+  if(view==='board'){$('#main').innerHTML=boardView()+'<div id="club-feature-root"></div>';void clubAdministration.mountBoard($('#club-feature-root'));return;}
+  if(view==='people'||view==='history'){const query=$('#history-search')?.value??'',year=$('#history-year')?.value??'all';$('#main').innerHTML=`<div id="club-feature-root" data-query="${e(query)}" data-year="${e(year)}"></div>`;void(view==='people'?clubAdministration.mountPeople($('#club-feature-root')):clubAdministration.mountResults($('#club-feature-root')));return;}
+  if(view==='imprint'||view==='privacy'){$('#main').innerHTML=legalView(view,clubSettings);return;}
   if(['applications','profile'].includes(view)){$('#main').innerHTML='<div id="member-workflow-root"></div>';view==='applications'?void memberWorkflows.mountApplications():memberWorkflows.mountProfile();return;}
   if(view==='registration'){$('#main').innerHTML=registrationView(currentTournament(),registrationEvent(selectedTournamentId),{demo});bindRegistration({submit:data=>(demo?demoRegistry:cloud).submitRegistration(selectedTournamentId,data),afterSubmit:()=>render()});return;}
   if(['registrations','members'].includes(view)){$('#main').innerHTML=`<div class="section-head"><div><p class="eyebrow">GESCHÜTZTE VEREINSVERWALTUNG</p><h2>${view==='members'?'Mitglieder.':'Turnieranmeldungen.'}</h2></div></div><div id="registry-management"></div>`;void registryManagement.mount(view,selectedTournamentId);return;}
@@ -251,7 +267,7 @@ function tableNextGames(queue,active){
 }
 function renderPlayerCallout(){
   const dock=$('#player-callout');if(!dock)return;
-  const info=role==='player'&&!isReadOnly()?E.teamTableInfo(state,teamId):{current:null,upcoming:[]};
+  const info=teamId&&!isReadOnly()?E.teamTableInfo(state,teamId):{current:null,upcoming:[]};
   const current=info.current&&['open','preparing'].includes(info.current.status)?info.current:null,m=current??info.upcoming[0];
   if(!m){dock.hidden=true;dock.innerHTML='';playerCalloutMarkup='';document.body.style.setProperty('--player-callout-space','0px');return;}
   const live=demo||synced&&navigator.onLine,urgent=m.status==='open',building=m.status==='preparing';
@@ -302,7 +318,7 @@ function openDialog(title,content,form='',data={},submitLabel='Speichern'){
 }
 function input(label,key,value='',type='text',attrs=''){return `<label>${label}<input name="${key}" type="${type}" value="${e(value)}" ${attrs}></label>`;}
 function confirmation(title,text,action,data={}){openDialog(title,`<p>${text}</p><div class="dialog-actions"><button class="button light" data-action="close">Abbrechen</button><button class="button red-button" data-action="confirmed" data-id="${action}">Bestätigen</button></div>`,'',data);}
-function roleFields(r='player',id=''){return `<p class="notice">Teamzuordnung für: <b>${e(currentTournament()?.title??selectedTournamentId)}</b>. Benutzerkonten gelten für den ganzen Verein.</p><label>Rolle<select name="role" id="account-role"><option value="player" ${r==='player'?'selected':''}>Mitspieler</option><option value="admin" ${r==='admin'?'selected':''}>Spielleitung</option>${board()?`<option value="board" ${r==='board'?'selected':''}>Vorstand</option>`:''}<option value="guest" ${r==='guest'?'selected':''}>Zuschauer (Schreibrechte entziehen)</option></select></label><label id="account-team-label" ${r!=='player'?'hidden':''}>Team des Mitspielers<select name="teamId" id="account-team" ${r==='player'?'required':''}><option value="">Bitte Team wählen</option>${(state?.teams??[]).map(t=>`<option value="${e(t.id)}" ${id===t.id?'selected':''}>${e(t.name)}</option>`).join('')}</select></label>`;}
+function roleFields(r='player',id=''){return `<p class="notice">Teamzuordnung für: <b>${e(currentTournament()?.title??selectedTournamentId)}</b>. Benutzerkonten gelten für den ganzen Verein.</p><label>Rolle<select name="role" id="account-role"><option value="player" ${r==='player'?'selected':''}>Mitspieler</option><option value="admin" ${r==='admin'?'selected':''}>Spielleitung</option>${board()?`<option value="board" ${r==='board'?'selected':''}>Vorstand</option>`:''}<option value="guest" ${r==='guest'?'selected':''}>Zuschauer (Schreibrechte entziehen)</option></select></label><label id="account-team-label">Eigenes Team (auch für Leitungskonten)<select name="teamId" id="account-team" ${r==='player'?'required':''}><option value="">Bitte Team wählen</option>${(state?.teams??[]).map(t=>`<option value="${e(t.id)}" ${id===t.id?'selected':''}>${e(t.name)}</option>`).join('')}</select></label>`;}
 function scoreDialog(id){
   const m=E.match(state,id);if(!canScore(m))return toast('Für dieses Spiel hast du keine Eingabeberechtigung oder die Selbsteingabe ist gesperrt.');
   const r=state.results[id],reset=admin()&&E.PHASES.indexOf(m.phase)<E.PHASES.indexOf(state.phase);
@@ -332,7 +348,7 @@ function handleAction(action,id){
     case 'team-mode':teamMode=id;render();break;
     case 'show-teams':view='teams';render(true);break;
     case 'more-games':matchLimit+=12;render();break;
-    case 'show-player-table':if(role==='player'){view='overview';render(true);requestAnimationFrame(()=>{const card=document.getElementById('table-'+Number(id));if(card){card.focus({preventScroll:true});card.scrollIntoView({block:'start',behavior:'auto'});}});}break;
+    case 'show-player-table':if(teamId){view='overview';render(true);requestAnimationFrame(()=>{const card=document.getElementById('table-'+Number(id));if(card){card.focus({preventScroll:true});card.scrollIntoView({block:'start',behavior:'auto'});}});}break;
     case 'my-games':view='overview';ownOnly=true;gameFilter='open';render(true);break;
     case 'print':window.print();break;
     case 'cup':{if($('#cups-fieldset').disabled)return;const current=Number($('#cup-value').value),clicked=Number(id);renderCups(clicked===current?Math.max(1,current-1):clicked);modal.normalCups=Number($('#cup-value').value);break;}
@@ -396,7 +412,7 @@ document.addEventListener('change',event=>{
   if(target.id==='table-filter'){tableFilter=target.value;matchLimit=12;render();}
   if(target.id==='own-filter'){ownOnly=target.checked;render();}
   if(target.name==='overtime'&&target.closest('#modal-form'))syncOvertime();
-  if(target.id==='account-role'){$('#account-team-label').hidden=target.value!=='player';$('#account-team').required=target.value==='player';}
+  if(target.id==='account-role'){$('#account-team-label').hidden=false;$('#account-team').required=target.value==='player';}
   if(target.id==='self-scoring'){const enabled=target.checked;task(()=>adminCommit(s=>({...s,allowSelfScoring:enabled})),enabled?'Selbsteingabe für eigene Spiele erlaubt.':'Selbsteingabe gesperrt.',false);}
   if(target.dataset.groupTeam){const id=target.dataset.groupTeam,g=target.value;task(()=>adminCommit(s=>{if(s.phase!=='setup')throw new Error('Gruppen sind bereits gesperrt.');if(g&&s.teams.filter(t=>t.group===g&&t.id!==id).length>=4)throw new Error('Diese Gruppe ist voll.');const next=E.clone(s),t=next.teams.find(t=>t.id===id);if(!t)throw new Error('Team wurde inzwischen entfernt.');t.group=g;return next;}),'Gruppe zugewiesen.',false);}
 });
@@ -437,15 +453,15 @@ window.addEventListener('storage',event=>{if(demo&&event.key===DEMO_KEY&&event.n
 let dispatchTick='';
 setInterval(()=>{if(state&&E.tablePlans(state).length){const tick=JSON.stringify([state.revision,E.activeTables(state),E.tablePlans(state).map(p=>p.status)]);if(tick!==dispatchTick){dispatchTick=tick;render();}}},1000);
 async function start(){
-  loadClubArchive().then(()=>{if(currentTournament()?.externalUrl)render(true);}).catch(()=>{/* Der Originalspielplan bleibt als Link erreichbar. */});
+  if(currentTournament()?.externalUrl||['history','people'].includes(view))ensureArchives().then(()=>{if(currentTournament()?.externalUrl||view==='history')render(true);}).catch(()=>{/* Der Originalspielplan bleibt als Link erreichbar. */});
   loadDocuments().then(()=>{if(view==='rules')render(true);if(view==='membership'&&$('#document-pages'))$('#document-pages').innerHTML=documentPages('statutes');}).catch(error=>toast(humanError(error)));
   if(localDemo){loadDemoCatalog();updateDemoKey();if(!currentTournament()?.externalUrl)loadDemoState();render();}
   else if(onlineDemoRequested){render();try{await cloud.connect({demoGate:true,onState:()=>{},onUsers:()=>{},onConnection:()=>{},onUser:u=>{if(user?.uid!==u?.uid){memberWorkflows.clear();if(view==='profile')$('#main').replaceChildren();}user=u;render();},onRole:r=>setDemoAccess(r),onError:error=>{demoGateError=humanError(error);if(error.code==='permission-denied')setDemoAccess('guest');else render();}});}catch(error){demoGateError=humanError(error);render();}}
   else{
     readStateCache();render();
-    try{const connectedTournamentId=currentTournament()?.externalUrl?'main':selectedTournamentId;await cloud.connect({initialTournamentId:connectedTournamentId,onCatalog:rows=>{catalog=mergeTournamentCatalog(rows);catalogLoaded=true;render();},onRegistrationSettings:rows=>{registrationSettings=rows;render();},onState:(s,sourceId)=>{if(sourceId&&sourceId!==selectedTournamentId)return;if(currentTournament()?.externalUrl)return;if(s&&s.schema!==2){toast('Dieser Turnierstand hat ein unbekanntes Format.');return;}state=s;try{if(s)localStorage.setItem(stateCacheKey(),JSON.stringify(s));else localStorage.removeItem(stateCacheKey());}catch{}render();},onUser:u=>{if(user?.uid!==u?.uid){memberWorkflows.clear();if(view==='profile')$('#main').replaceChildren();}user=u;render();},onRole:(r,id,tid='main')=>{if(r!=='board'){registryManagement.clear();privateApplications=[];if($('#dialog-title')?.textContent==='Mitgliedsanträge'||['account','role'].includes($('#modal-form')?.dataset.form))$('#dialog').close();}role=r;assignedTeamId=id;assignedTournamentId=tid;refreshOwnTeam();render();},onUsers:list=>{users=list;render();},onConnection:connected=>{synced=connected;render();},onError:error=>toast(humanError(error))});cloudReady=true;if(currentTournament()?.externalUrl)cloud.selectTournament(null);else if(selectedTournamentId!==connectedTournamentId)cloud.selectTournament(selectedTournamentId);}catch(error){toast(`Firebase konnte nicht geladen werden: ${humanError(error)}`);}
+    try{const connectedTournamentId=needsLiveState()&&!currentTournament()?.externalUrl?selectedTournamentId:null;await cloud.connect({initialTournamentId:connectedTournamentId,onCatalog:rows=>{catalog=mergeTournamentCatalog(rows);catalogLoaded=true;render(view==='history');},onRegistrationSettings:rows=>{registrationSettings=rows;render();},onState:(s,sourceId)=>{if(sourceId&&sourceId!==selectedTournamentId)return;if(currentTournament()?.externalUrl)return;if(s&&s.schema!==2){toast('Dieser Turnierstand hat ein unbekanntes Format.');return;}state=s;try{if(s)localStorage.setItem(stateCacheKey(),JSON.stringify(s));else localStorage.removeItem(stateCacheKey());}catch{}render();},onUser:u=>{if(user?.uid!==u?.uid){memberWorkflows.clear();if(view==='profile')$('#main').replaceChildren();}user=u;watchOwnTeam();render();},onRole:(r,id,tid='main')=>{if(r!=='board'){registryManagement.clear();privateApplications=[];if($('#dialog-title')?.textContent==='Mitgliedsanträge'||['account','role'].includes($('#modal-form')?.dataset.form))$('#dialog').close();}role=r;assignedTeamId=id;assignedTournamentId=tid;refreshOwnTeam();render();},onUsers:list=>{users=list;render();},onConnection:connected=>{synced=connected;render();},onError:error=>toast(humanError(error))});cloudReady=true;requestedLiveId=connectedTournamentId;if(view==='history')render(true);watchOwnTeam();cloud.watchClubSettings(settings=>{clubSettings=settings;setContributionRates(settings.contributionRates);window.dispatchEvent(new Event('club-settings'));render(['imprint','privacy'].includes(view));},error=>toast(humanError(error)));syncLiveState();}catch(error){toast(`Firebase konnte nicht geladen werden: ${humanError(error)}`);}
   }
-  if('serviceWorker'in navigator&&(location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname)))navigator.serviceWorker.register('./sw.js').catch(()=>toast('Die Offline-Ansicht konnte nicht eingerichtet werden.'));
+  if('serviceWorker'in navigator&&(location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname)))installUpdates().catch(()=>toast('Die Offline-Ansicht konnte nicht eingerichtet werden.'));
 }
 
 start();
@@ -459,14 +475,14 @@ async function openMembershipInbox(){
 async function downloadMemberships(items=privateApplications){
   if(!board()||!items.length)return;
   try{const {PDFDocument}=await import('./vendor/pdf-lib.esm.min.js'),out=await PDFDocument.create();
-    for(const item of items){const input=await PDFDocument.load(item.pdf.toUint8Array());for(const p of await out.copyPages(input,input.getPageIndices()))out.addPage(p);}
+    for(const item of items){const bytes=item.pdf??await cloud.getMembershipPDF(item.id);const input=await PDFDocument.load(bytes.toUint8Array());for(const p of await out.copyPages(input,input.getPageIndices()))out.addPage(p);}
     const url=URL.createObjectURL(new Blob([await out.save()],{type:'application/pdf'})),a=document.createElement('a');a.href=url;a.download='Beerpong-Academy-Mitgliedsantraege.pdf';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);
   }catch(error){toast(humanError(error));}
 }
 
 document.querySelector('#dialog').addEventListener('close',()=>{privateApplications=[];});
 
-function downloadPrivatePDF(item){if(!item)return;const url=URL.createObjectURL(new Blob([item.pdf.toUint8Array()],{type:'application/pdf'})),a=document.createElement('a');a.href=url;a.download=item.filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
+async function downloadPrivatePDF(item){if(!item||!board())return;try{const bytes=item.pdf??await cloud.getMembershipPDF(item.id);if(!board())return;const url=URL.createObjectURL(new Blob([bytes.toUint8Array()],{type:'application/pdf'})),a=document.createElement('a');a.href=url;a.download=item.filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(err){toast(humanError(err));}}
 
 function accountManagementView(){return `<section class="panel"><h3>Benutzer & Teamzuordnung</h3>${demo?'<p class="notice">Echte Konten sind in der Demo deaktiviert. Oben lassen sich Rolle und eigenes Team testen.</p>':`<p class="legend">Mitspieler benötigen ein zugeordnetes Team. Mehrere Personen können demselben Team angehören.</p><div class="admin-actions">${btn('Konto anlegen','account-add')}${btn('Vorhandenes Konto zuweisen','role-add')}</div>${users.map(u=>`<div class="user-row"><div><b>${e(u.name)}</b><small>${e(u.email)} · ${roleLabel(u.role)}${u.teamId?` · ${e(catalog.find(t=>t.id===(u.tournamentId??'main'))?.title??u.tournamentId??'main')} · ${e((u.tournamentId??'main')===selectedTournamentId?(team(u.teamId)?.name??'Team fehlt'):'Team zugeordnet')}`:''}</small></div><button class="text-button" data-action="role-edit" data-id="${e(u.uid)}">Bearbeiten</button><button class="text-button" data-action="account-invite" data-id="${e(u.uid)}">Passwortlink senden</button></div>`).join('')}`}</section>`;}
-function boardView(){return `<div class="section-head"><div><p class="eyebrow">NUR FÜR DEN VORSTAND</p><h2>Vorstand.</h2><p>Geschützte Vereinsverwaltung.</p></div><span class="tag red-tag">VORSTAND</span></div><section class="panel demo-entry"><h3>Turnier ausprobieren</h3><p>${demo?'Du arbeitest mit lokalen Beispieldaten. Echte Konten und PDF-Abgaben sind gesperrt; die Mitgliederaufnahme kann mit einem erfundenen Antrag getestet werden.':'Teste den vollständigen Turnierablauf mit Beispieldaten in einem separaten Tab. Das Live-Turnier bleibt davon unberührt.'}</p>${!demo?btn('Online-Demo öffnen ↗','open-demo'):''}</section>${boardTournamentPanel()}<section class="panel board-tournament-panel"><h3>Anmeldungen & Mitglieder</h3><p>Turnieranmeldungen, Warteliste, Kosten und Mitgliedsabgleich. Die Mitgliederliste und Spieler-E-Mails bleiben dem Vorstand vorbehalten.</p><div class="admin-actions"><button class="button light" data-view="registrations">Turnieranmeldungen verwalten</button><button class="button light" data-view="members">Mitglieder verwalten</button></div></section><div class="admin-grid">${accountManagementView()}<section class="panel"><h3>Mitgliedsanträge</h3><p>Unterschriebene Anträge prüfen, in die Mitgliederverwaltung übernehmen und PDFs einzeln oder gemeinsam herunterladen.</p><div class="admin-actions">${btn('Anträge öffnen','membership-inbox')}</div></section></div>`;}
+function boardView(){return `<div class="section-head"><div><p class="eyebrow">NUR FÜR DEN VORSTAND</p><h2>Vorstand.</h2><p>Geschützte Vereinsverwaltung.</p></div><span class="tag red-tag">VORSTAND</span></div><section class="panel demo-entry"><h3>Turnier ausprobieren</h3><p>${demo?'Du arbeitest mit lokalen Beispieldaten. Echte Konten und PDF-Abgaben sind gesperrt; die Mitgliederaufnahme kann mit einem erfundenen Antrag getestet werden.':'Teste den vollständigen Turnierablauf mit Beispieldaten in einem separaten Tab. Das Live-Turnier bleibt davon unberührt.'}</p>${!demo?btn('Online-Demo öffnen ↗','open-demo'):''}</section><div id="board-event-meta">${boardTournamentPanel()}</div><section class="panel board-tournament-panel"><h3>Anmeldungen & Mitglieder</h3><p>Turnieranmeldungen, Warteliste, Kosten und Mitgliedsabgleich. Die Mitgliederliste und Spieler-E-Mails bleiben dem Vorstand vorbehalten.</p><div class="admin-actions"><button class="button light" data-view="registrations">Turnieranmeldungen verwalten</button><button class="button light" data-view="members">Mitglieder verwalten</button></div></section><div class="admin-grid"><div id="board-accounts">${accountManagementView()}</div><section class="panel"><h3>Mitgliedsanträge</h3><p>Unterschriebene Anträge prüfen, in die Mitgliederverwaltung übernehmen und PDFs einzeln oder gemeinsam herunterladen.</p><div class="admin-actions">${btn('Anträge öffnen','membership-inbox')}</div></section></div>`;}

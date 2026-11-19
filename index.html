@@ -12,25 +12,26 @@
   <link rel="stylesheet" href="responsive.css">
   <link rel="stylesheet" href="club.css">
   <link rel="stylesheet" href="registration.css">
+  <link rel="stylesheet" href="club-features.css">
   <title>BEERPONG · Beerpong Academy</title>
 </head>
 <body>
   <a class="skip" href="#main">Zum Inhalt</a>
   <header class="masthead">
     <div class="topbar wrap">
-      <a class="brand" href="./" aria-label="Beerpong Startseite"><img src="DATEN/Beerpong_Gesamt_Vektor.png" alt="Beerpong Academy e. V." width="64" height="64"></a>
+      <a class="brand" href="./" aria-label="Beerpong Startseite"><img src="icons/academy-512.png" alt="Beerpong Academy e. V." width="64" height="64"></a>
       <div class="account"><div class="header-status"><span id="connection" class="connection" role="status">Wird geladen …</span><span id="phase-badge" class="phase-pill" role="status" aria-label="Turnierphase" hidden></span></div><button class="button ghost" id="login-button" data-action="login">Anmelden ↗</button></div>
     </div>
   </header>
   <div id="mode-banner" class="mode-banner" hidden></div>
   <nav class="tabs" aria-label="Vereinsbereiche"><div class="wrap" id="navigation">
-    <button data-view="home" aria-current="page">Startseite</button><button data-view="tournaments">Turniere</button><button data-view="rules">Regelwerk</button><button data-view="membership">Mitgliedschaft</button><button data-view="profile" id="profile-tab" hidden>Meine Daten</button><button data-view="admin" id="admin-tab" hidden>Spielleitung</button><button data-view="board" id="board-tab" hidden>Vorstand</button>
+    <button data-view="home" aria-current="page">Startseite</button><button data-view="tournaments">Turniere</button><button data-view="rules">Regelwerk</button><button data-view="history">Historie</button><button data-view="membership">Mitgliedschaft</button><button data-view="profile" id="profile-tab" hidden>Meine Daten</button><button data-view="admin" id="admin-tab" hidden>Spielleitung</button><button data-view="board" id="board-tab" hidden>Vorstand</button>
   </div></nav>
   <section id="tournament-context" class="wrap tournament-context" aria-label="Ausgewähltes Turnier" hidden></section>
   <nav id="tournament-navigation" class="wrap tournament-navigation" aria-label="Spielplanbereiche" hidden><button data-view="overview">Übersicht</button><button data-view="groups">Gruppen</button><button data-view="bracket">KO-Baum</button><button data-view="games" id="archive-games-tab" hidden>Alle Ergebnisse</button><button data-view="teams">Teams</button></nav>
   <aside id="player-callout" class="player-callout" role="status" aria-live="polite" aria-atomic="true" hidden></aside>
   <main id="main" class="wrap" tabindex="-1"><div class="empty"><p class="eyebrow">GLEICH GEHT’S LOS</p><h2>Der Turnierplan wird geladen.</h2></div></main>
-  <footer class="wrap footer"><span>BEERPONG ACADEMY e. V. <b>★</b> BEERPONG</span><div><button data-action="rules" class="text-button">So wird gewertet</button><button data-action="install" class="text-button">App installieren</button></div></footer>
+  <footer class="wrap footer"><span>BEERPONG ACADEMY e. V. <b>★</b> BEERPONG</span><div><button data-action="rules" class="text-button">So wird gewertet</button><button data-view="imprint" class="text-button">Impressum & Kontakt</button><button data-view="privacy" class="text-button">Datenschutz</button><span id="app-version" class="legend">Version 10</span><button data-action="install" class="text-button">App installieren</button></div></footer>
   <dialog id="dialog" aria-labelledby="dialog-title"><div id="dialog-body"></div></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <noscript>Bitte JavaScript aktivieren, um Spielpläne und Live-Ergebnisse zu sehen.</noscript>

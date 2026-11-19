@@ -1,5 +1,8 @@
 /** Private Beitragslogik. Keine Bankverbindung, kein Zahlungsauftrag; Beträge immer in Cent. */
+import {annualFee} from './pricing.js';
 import {fullName,nameKey} from './registration.js';
+import {validDate,joinedDate,beforeEntryYear} from './dates.js';
+export {validDate} from './dates.js';
 export const contributionStates={open:'Offen',pending:'Einzug vorgemerkt',paid:'Bezahlt',returned:'Rücklastschrift',review:'Prüfen',waived:'Beitragsfrei',notdue:'Nicht fällig'};
 export const contributionMethods={manual:'Manuell',debit:'Lastschrift',transfer:'Überweisung',cash:'Bar',excel:'Excel-Übernahme'};
 export const validYear=year=>/^20\d{2}$/.test(String(year));
@@ -13,10 +16,11 @@ export function amountCents(value){
 export function legacyContribution(member,year){
  if(!validYear(year))throw Error('Ungültiges Beitragsjahr.');
  const value=String(member.feeHistory?.[year]??''),color=String(member.feeColors?.[year]??'').toUpperCase(),has=Object.hasOwn(member.feeHistory??{},year)||Object.hasOwn(member.feeColors??{},year),amount=amountCents(value);
- const joined=String(member.joined??'').match(/^((?:19|20)\d{2})-/)?.[1];
- let status=!member.active||joined&&Number(year)<Number(joined)?'notdue':'open';
- if(has)status=greens.has(color)?'paid':reds.has(color)?'open':'review';
- return{memberId:member.id,year:String(year),dueCents:status==='notdue'?0:800,paidCents:status==='paid'?Math.max(800,amount??0):0,status,method:has?'excel':'manual',date:'',note:has?`Excel: ${value||'leer'}${color?' · '+color:''}`:'',revision:-1,legacy:has,value,color};
+ const fee=has?800:annualFee(year),beforeEntry=beforeEntryYear(member.joined,year);
+ let status=!member.active||beforeEntry?'notdue':'open';
+ if(!has&&member.active&&!beforeEntry&&fee===0)status='waived';
+ if(has&&!beforeEntry)status=greens.has(color)?'paid':reds.has(color)?'open':'review';
+ return{memberId:member.id,year:String(year),dueCents:['notdue','waived'].includes(status)?0:fee,paidCents:status==='paid'?Math.max(fee,amount??0):0,status,method:has?'excel':'manual',date:'',note:has?`Excel: ${value||'leer'}${color?' · '+color:''}`:'',revision:-1,legacy:has,value,color};
 }
 export function contributionFor(member,year,entries=[]){return entries.find(r=>r.memberId===member.id)??legacyContribution(member,year);}
 export function normalizeContribution(input){
@@ -28,7 +32,6 @@ export function normalizeContribution(input){
  if(date&&!validDate(date))throw Error('Bitte ein gültiges Buchungsdatum eingeben.');
  return{dueCents,paidCents,status,method,date,note:String(input.note??'').trim().slice(0,1000)};
 }
-export function validDate(value){if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;const d=new Date(value+'T12:00:00Z');return Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===value;}
 export function bankDate(value){const s=String(value??'').trim(),m=s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/);const date=m?`${m[3].length===2?'20'+m[3]:m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`:s;return validDate(date)?date:null;}
 export function parseCSV(text,delimiter){
  const rows=[];let row=[],cell='',quoted=false;const s=String(text).replace(/^\uFEFF/,'');
@@ -68,5 +71,5 @@ export function applyBankPayment(current,row,kind){
  if(current.date&&row.date<current.date)throw Error('Diese Buchung liegt vor dem letzten Beitragsstand. Bitte zuerst die Reihenfolge und das Beitragsjahr prüfen.');
  if(current.dueCents<=0)throw Error('Für dieses Mitglied ist kein Beitrag fällig. Bitte zuerst das Jahres-Soll prüfen.');
  const paidCents=kind==='return'?Math.max(0,current.paidCents-(row.originalCents||Math.abs(row.amountCents))):current.paidCents+row.amountCents;
- return normalizeContribution({...current,paidCents,status:kind==='return'?'returned':paidCents>=current.dueCents?'paid':'open',method:kind==='return'||/lastschrift/i.test(row.bookingText??'')?'debit':'transfer',date:row.date});
+ return normalizeContribution({...current,paidCents,status:paidCents>=current.dueCents?'paid':kind==='return'?'returned':'open',method:kind==='return'||/lastschrift/i.test(row.bookingText??'')?'debit':'transfer',date:row.date});
 }

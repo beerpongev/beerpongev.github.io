@@ -1,12 +1,10 @@
 /** Sparkassen-Vorlagenexport gemäß bereitgestellter CSV; löst keinen Bankauftrag aus. */
 import {fullName} from './registration.js';
 import {validYear,validDate,contributionFor} from './contributions.js';
+import {joinedDate,beforeEntryYear} from './dates.js';
+export {joinedDate} from './dates.js';
 export const SPARKASSE_COLUMNS=['URSPRUNG','NAME','KONTO','IBAN','BLZ','BIC','BETRAG','VERW_ZWECK','MANDATS_REF','MANDATS_REF_DATUM'];
 export const DEFAULT_DEBIT_PURPOSE='Beerpong Academy e.V. Mitgliedsbeitrag';
-export function joinedDate(value){
- const s=String(value??'').trim(),m=s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/),iso=m?`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`:s;
- return validDate(iso)?iso:null;
-}
 export function mandateYear(joined){const date=joinedDate(joined);if(!date||!validYear(date.slice(0,4)))throw Error('Für die automatische Mandatsreferenz wird ein gültiges Eintrittsdatum benötigt.');return date.slice(0,4);}
 export function mandateSequence(members){
  return members.reduce((max,m)=>{const match=String(m.mandate??'').match(/^20\d{2}\/(\d+)$/),reference=match?Number(match[1]):0,number=/^\d+$/.test(String(m.number??''))?Number(m.number):0;return Math.max(max,Number.isSafeInteger(reference)?reference:0,Number.isSafeInteger(number)?number:0);},119);
@@ -34,7 +32,7 @@ export function prepareDebitExport({members,entries=[],year,purpose=DEFAULT_DEBI
  const chosen=selectedIds?new Set(selectedIds):null;
  for(const m of members){
   if(chosen&&!chosen.has(m.id))continue;const c=contributionFor(m,year,entries),amount=c.dueCents-c.paidCents;
-  if(!m.active&&!includeFormer||['paid','waived','notdue'].includes(c.status)||amount<=0){skipped.push({id:m.id,name:fullName(m),reason:!m.active?'Ehemaliges Mitglied':'Beitrag erledigt oder nicht fällig'});continue;}
+  if(beforeEntryYear(m.joined,year)||!m.active&&!includeFormer||['paid','waived','notdue'].includes(c.status)||amount<=0){skipped.push({id:m.id,name:fullName(m),reason:beforeEntryYear(m.joined,year)?'Beitragsjahr liegt vor dem Eintrittsjahr':!m.active?'Ehemaliges Mitglied':'Beitrag erledigt oder nicht fällig'});continue;}
   const errors=[],name=String(m.accountHolder||fullName(m)).trim(),iban=String(m.iban??'').replace(/\s+/g,'').toUpperCase(),mandate=String(m.mandate??'').trim(),date=joinedDate(m.joined);
   if(m.bankStatus==='unclear')errors.push('IBAN / Bankverbindung unklar: Export für alle Beitragsjahre gesperrt, bis der Vorstand die Bankverbindung geprüft und freigegeben hat.');
   if(!name||name.length>70||/[\r\n\x00-\x1f]/.test(name)||/^[=+@-]/.test(name))errors.push('Kontoinhaber fehlt oder ist nicht als Bankname verwendbar (maximal 70 Zeichen).');
