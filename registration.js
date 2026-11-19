@@ -101,3 +101,12 @@ export function validatePrivateImport(data){
  for(const a of archiveSnapshots)need(/^official-(11|12|13|14)-20[0-9]{2}$/.test(a.id)&&Array.isArray(a.groups)&&Array.isArray(a.knockout)&&Array.isArray(a.lineups)&&a.lineups.length<=100,'Ungültiges Sportarchiv.');
  return{format:data.format,tournamentId:data.tournamentId,members,registrations,archiveLineups,archiveSnapshots};
 }
+export function memberInvitationPlan(members,accounts,logs=[]){
+ const email=x=>String(x??'').trim().toLowerCase();
+ return members.filter(m=>m.active).map(m=>{
+  const old=logs.find(l=>l.id===m.id),matches=accounts.filter(a=>a.uid===m.accountUid||email(a.email)===email(m.email));
+  const account=m.accountUid?accounts.find(a=>a.uid===m.accountUid):matches.length===1?matches[0]:null;
+  const issue=old?'Bereits bearbeitet: '+old.status+(old.message?' · '+old.message:''):account?.disabled?'Benutzerkonto ist gesperrt; Bereinigung zuerst abschließen':!m.email||!/^[^ @]+@[^ @]+\.[^ @]+$/.test(m.email)?'E-Mail fehlt oder ungültig':members.some(other=>other.id!==m.id&&other.active&&email(other.email)===email(m.email))?'E-Mail wird von mehreren Mitgliedern verwendet':m.accountUid&&!account?'Verknüpftes Konto fehlt':matches.length>1&&!m.accountUid?'Mehrere Konten gefunden':'';
+  return{memberId:m.id,name:fullName(m),email:m.email,uid:account?.uid??'',loginEmail:account?.email??m.email,eligible:!issue,issue,action:account?'Vorhandenes Konto verknüpfen und Zugangsmail senden':'Konto anlegen, verknüpfen und einladen'};
+ });
+}

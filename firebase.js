@@ -2,10 +2,11 @@ import {createClubStore} from './club-store.js';
 import {normalizePrices} from './pricing.js';
 import { firebaseConfig, tournamentId, useEmulators, appCheckSiteKey } from './config.js';
 import { runStateTransaction } from './transaction.js';
-import {defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact} from './registration.js';
+import {memberInvitationPlan,defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact} from './registration.js';
 import {validYear,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
 
+export const firebaseProjectId=firebaseConfig.projectId;
 export const configured = firebaseConfig.apiKey !== 'HIER_EINTRAGEN' && firebaseConfig.projectId !== 'DEIN-PROJEKT';
 export const liveCacheKey = `beerpong-live-${firebaseConfig.projectId}`;
 let api, authApi, apps, db, auth, secondary, ref,demoGateOnly=false;
@@ -17,7 +18,7 @@ async function requireBoardAccount(){
   liveOnly();
   if(!auth?.currentUser?.uid)throw new Error('Die Benutzerverwaltung ist dem Vorstand vorbehalten.');
   const own=await api.getDoc(api.doc(db,'roles',auth.currentUser.uid));
-  if(own.data()?.role!=='board')throw new Error('Die Benutzerverwaltung ist dem Vorstand vorbehalten.');
+  if(own.data()?.role!=='board'||own.data()?.disabled)throw new Error('Die Benutzerverwaltung ist dem Vorstand vorbehalten.');
 }
 
 /** Die Online-Demo verwendet Firebase nur für Anmeldung und Prüfung der eigenen Rolle. */
@@ -52,8 +53,8 @@ export async function connect({ onState, onUser, onRole, onUsers, onConnection, 
     historyApproved=false;stopRole(); stopUsers(); onUsers([]); onRole('guest',''); onUser(user);
     if (!user) return;
     stopRole = api.onSnapshot(api.doc(db, 'roles', user.uid), snap => {
-      const role = snap.data()?.role ?? 'guest';
-      historyApproved=!!user&&!user.isAnonymous&&snap.exists()&&['guest','player','admin','board'].includes(role);
+      const role = snap.data()?.disabled?'guest':snap.data()?.role ?? 'guest';
+      historyApproved=!!user&&!user.isAnonymous&&snap.exists()&&!snap.data()?.disabled&&['guest','player','admin','board'].includes(role);
       onRole(role,snap.data()?.teamId??'',snap.data()?.tournamentId??tournamentId); stopUsers();onUsers([]);
       if (!demoGate&&role==='board') stopUsers = api.onSnapshot(api.collection(db, 'roles'), list => onUsers(list.docs.map(d => ({ uid: d.id, ...d.data() }))), onError);
     }, onError);
@@ -159,6 +160,7 @@ export async function setRole(uid,data){
   const ref=api.doc(db,'roles',uid),old=await tx.get(ref);
   if(uid===auth.currentUser.uid&&data.role!==old.data()?.role)throw Error('Die eigene Leitungsrolle kann hier nicht geändert werden.');
   const previous=old.data(),id=data.tournamentId??tournamentId;
+  if(previous?.disabled)throw Error('Das Konto ist gesperrt. Bitte die Bereinigung zuerst abschließen.');
   if(previous?.teamId&&(previous.tournamentId??tournamentId)!==id)tx.set(api.doc(db,'accountTeams',uid,'events',previous.tournamentId??tournamentId),{teamId:previous.teamId,personId:'',updatedAt:api.serverTimestamp()});
   tx.set(ref,{name:data.name.trim(),email:data.email.trim(),role:data.role,teamId:data.teamId??'',tournamentId:id});
   tx.set(api.doc(db,'accountTeams',uid,'events',id),{teamId:data.teamId??'',personId:'',updatedAt:api.serverTimestamp()});
@@ -281,7 +283,7 @@ export async function linkMemberAccount(memberId,uid){
  await api.runTransaction(db,async tx=>{
   const ref=api.doc(db,'members',memberId),profileRef=uid?api.doc(db,'memberProfiles',uid):null;
   const [member,role,profile]=await Promise.all([tx.get(ref),uid?tx.get(api.doc(db,'roles',uid)):null,profileRef?tx.get(profileRef):null]);
-  if(!member.exists())throw Error('Mitglied nicht gefunden.');if(uid&&!role.exists())throw Error('Bitte ein vorhandenes Benutzerkonto auswählen.');
+  if(!member.exists())throw Error('Mitglied nicht gefunden.');if(uid&&(!role.exists()||role.data()?.disabled))throw Error('Bitte ein vorhandenes, nicht gesperrtes Benutzerkonto auswählen.');
   if(profile?.exists()&&profile.data().memberId!==memberId)throw Error('Das Konto gehört bereits zu einem anderen Mitglied.');
   const old=member.data(),next=normalizeMember({...old,accountUid:uid});
   const personRef=uid&&old.personId?api.doc(db,'persons',old.personId):null,person=personRef?await tx.get(personRef):null;
@@ -332,4 +334,36 @@ export async function publishSportLineups(id){
  const parts=(await listParticipations()).filter(p=>p.tournamentId===id);
  const lineups=parts.map(p=>({...Object.fromEntries(['personId','firstName','lastName','tournamentId','teamId','teamName','year','date','edition','slot'].filter(k=>p[k]!==undefined).map(k=>[k,p[k]])),teamName:current?.teams?.find(t=>t.id===p.teamId)?.name??p.teamName}));
  await api.setDoc(api.doc(db,'sportArchives',id),{id,groups:[],knockout:[],placements:[],lineups,updatedAt:api.serverTimestamp()});
+}
+
+export async function previewMemberInvitations(){
+ await requireBoardAccount();const [members,accounts,log]=await Promise.all([listMembers(),listAccounts(),api.getDocs(api.collection(db,'memberInvitations'))]);
+ return memberInvitationPlan(members,accounts.map(a=>({...a,uid:a.uid??a.id})),log.docs.map(d=>({id:d.id,...d.data()})));
+}
+export async function sendMemberInvitations(memberIds){
+ await requireBoardAccount();if(!Array.isArray(memberIds)||memberIds.length>20)throw Error('Bitte höchstens 20 Einladungen pro Durchlauf.');
+ const plan=await previewMemberInvitations(),results=[];
+ for(const id of [...new Set(memberIds)]){
+  const item=plan.find(p=>p.memberId===id&&p.eligible);if(!item)continue;
+  const ref=api.doc(db,'memberInvitations',id);
+  const claimed=await api.runTransaction(db,async tx=>{const old=await tx.get(ref);if(old.exists())return false;tx.set(ref,{status:'processing',email:item.loginEmail,updatedAt:api.serverTimestamp()});return true;});if(!claimed)continue;
+  try{
+   let uid=item.uid;if(uid){await linkMemberAccount(id,uid);await inviteAccount(item.loginEmail);}else{uid=await createAccount({email:item.email,name:item.name,role:'guest',teamId:''});await linkMemberAccount(id,uid);}
+   await api.runTransaction(db,async tx=>{const old=await tx.get(ref);tx.set(ref,{...old.data(),status:'sent',uid,updatedAt:api.serverTimestamp()});});results.push({id,status:'sent'});
+  }catch(error){await api.runTransaction(db,async tx=>{const old=await tx.get(ref);tx.set(ref,{...old.data(),status:'review',message:String(error.message??error).slice(0,600),updatedAt:api.serverTimestamp()});});results.push({id,status:'review'});break;}
+ }
+ return results;
+}
+
+export async function removeAccountAccess(uid){
+ await requireBoardAccount();if(typeof uid!=='string'||uid.length<1||uid.length>128||uid.includes('/')||uid===auth.currentUser.uid)throw Error('Das eigene Vorstandskonto kann hier nicht entfernt werden.');
+ const roleRef=api.doc(db,'roles',uid);
+ await api.runTransaction(db,async tx=>{const old=await tx.get(roleRef);if(!old.exists())throw Error('Konto fehlt.');tx.set(roleRef,{...old.data(),disabled:true});});
+ // Erst sperren. Bei einem Abbruch bleibt die Sperre bestehen und die Bereinigung kann fortgesetzt werden.
+ const bindings=[];
+ for(const collection of ['members','persons','participations']){const result=await api.getDocs(api.query(api.collection(db,collection),api.where('accountUid','==',uid)));for(const d of result.docs)bindings.push({ref:api.doc(db,collection,d.id),unlink:true});}
+ const teams=await api.getDocs(api.collection(db,'accountTeams',uid,'events'));for(const d of teams.docs)bindings.push({ref:api.doc(db,'accountTeams',uid,'events',d.id),unlink:false});
+ bindings.push({ref:api.doc(db,'memberProfiles',uid),unlink:false});
+ for(let offset=0;offset<bindings.length;offset+=100){const batch=bindings.slice(offset,offset+100);await api.runTransaction(db,async tx=>{const records=await Promise.all(batch.map(b=>tx.get(b.ref)));for(let i=0;i<batch.length;i++){const b=batch[i],old=records[i];if(!old.exists())continue;if(b.unlink){if(old.data().accountUid===uid)tx.update(b.ref,{accountUid:'',updatedAt:api.serverTimestamp()});}else tx.delete(b.ref);}});}
+ await api.deleteDoc(roleRef);return{uid,authDeletionRequired:true};
 }

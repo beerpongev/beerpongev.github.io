@@ -126,7 +126,7 @@ export function createClubStore(environment){
   const {api,db}=await board(),ref=api.doc(db,'participations',`${id}__${teamId}__${slot}`);
   await api.runTransaction(db,async tx=>{
    const [part,role]=await Promise.all([tx.get(ref),tx.get(api.doc(db,'roles',uid))]);
-   if(!part.exists()||!role.exists())throw Error('Bitte Team zuerst erneut übernehmen und ein vorhandenes Konto auswählen.');
+   if(!part.exists()||!role.exists()||role.data()?.disabled)throw Error('Bitte Team zuerst erneut übernehmen und ein freigegebenes Konto auswählen.');
    const p=part.data(),personRef=api.doc(db,'persons',p.personId),person=await tx.get(personRef);
    if(person.data()?.accountUid&&person.data().accountUid!==uid)throw Error('Diese Person hat bereits ein anderes Konto. Bitte zuerst die Personenverknüpfung prüfen.');
    tx.update(ref,{accountUid:uid,updatedAt:api.serverTimestamp()});tx.update(personRef,{accountUid:uid,updatedAt:api.serverTimestamp()});
