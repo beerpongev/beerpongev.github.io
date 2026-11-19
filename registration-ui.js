@@ -1,7 +1,7 @@
 import {duplicateEntries} from './club-admin-ui.js';
 import {getActivePrices,normalizePrices} from './pricing.js';
 import {escapeHTML as e,localDate} from './ui.js';
-import {membershipReviewSignature,needsMembershipReview,euro,fullName,nameKey,calculateFees,normalizeRegistration,normalizeMember,membershipSuggestions,validatePrivateImport} from './registration.js';
+import {membershipReviewSignature,needsMembershipReview,euro,fullName,nameKey,calculateFees,normalizeRegistration,normalizeMember,membershipSuggestions} from './registration.js';
 import {createMemberFinance} from './member-finance.js';
 import {resolvePlayerAccount} from './team-transfer.js';
 export function registrationTeaser(t,s){
@@ -33,7 +33,7 @@ export function playerInvitationNotice(row,slot,records=[],demo=false,accountExi
  const log=records.find(r=>r.entryId===row.id&&r.slot===slot);
  if(!log)return accountExists?'':'<span class="contribution-tag contribution-review">Kein Versandnachweis · frühere Einladungen unbekannt</span>';
  const date=log.updatedAt?.toDate?.(),when=date?date.toLocaleString('de-DE'):'',label=log.status==='accepted'?'Passwortlink: Versand von Firebase angenommen':log.status==='processing'?'Einladung gestartet · Abschluss noch offen':'Einladung fehlgeschlagen / prüfen',tone=log.status==='accepted'?'paid':log.status==='review'?'open':'review';
- return '<span class="contribution-tag contribution-'+tone+'">'+e(label)+'</span><br><span class="legend">'+e(log.email)+(when?' · '+e(when):'')+(log.status==='accepted'?' · Zustellung nicht bestätigt':'')+'</span>'+(log.error?'<br><span class="legend">'+e(log.error)+'</span>':'');
+ return '<span class="contribution-tag contribution-'+tone+'">'+e(label)+'</span><br><span class="legend">'+e(log.email)+(when?' · '+e(when):'')+'</span>'+(log.error?'<br><span class="legend">'+e(log.error)+'</span>':'');
 }
 export function registrationPaymentNotice(row){
  if(row.status==='cancelled')return '';
@@ -99,10 +99,10 @@ function mountMemberMatching(form,players,getMembers){
 }
 /** Private Daten nur im RAM der gerade geöffneten Vorstandssicht. */
 export function createRegistryManagement(ctx){
- let members=[],entries=[],invitations=[],accounts=null,stop=()=>{},generation=0,root=null,eventId='',mode='',pendingImport=null;
+ let members=[],entries=[],invitations=[],accounts=null,stop=()=>{},generation=0,root=null,eventId='',mode='';
  const api=()=>ctx.backend(),allowed=()=>ctx.isBoard();
  const finance=createMemberFinance({...ctx,members:()=>members,refreshMembers:async()=>{if(ctx.demo())members=await api().listMembers();}});
- function clear(){generation++;stop();stop=()=>{};finance.clear();members=[];entries=[];invitations=[];accounts=null;pendingImport=null;root=null;}
+ function clear(){generation++;stop();stop=()=>{};finance.clear();members=[];entries=[];invitations=[];accounts=null;root=null;}
  const error=err=>{if(root&&allowed()){const el=root.querySelector('.registry-error');el.textContent=err.message??String(err);el.hidden=false;}};
  async function run(work,message){
   if(!allowed())return;const g=generation,element=root;root?.classList.add('registry-busy');root.querySelector('.registry-error').hidden=true;root.querySelector('#registry-action-result').hidden=true;
@@ -112,7 +112,7 @@ export function createRegistryManagement(ctx){
  async function mount(kind,id){
   clear();if(!allowed())return;eventId=id;mode=kind;root=document.querySelector('#registry-management');if(!root)return;
   const g=generation;
-  root.innerHTML=`<div class="registry-toolbar"><button class="button light" data-view="board">← Vorstand</button><button class="button light" data-view="${kind==='members'?'registrations':'members'}">${kind==='members'?'Turnieranmeldungen':'Mitgliederliste'}</button><button class="button light" data-registry="new">${kind==='members'?'Mitglied anlegen':'Team nachtragen'}</button></div><p class="notice">${ctx.demo()?'DEMO · Nur erfundene Daten verwenden. Änderungen bleiben im Arbeitsspeicher.':'Geschützte Daten · ausschließlich für den Vorstand.'}</p>${errorBox}<div id="registry-config"></div><div id="registry-import"></div><div id="registry-editor"></div><label class="registry-search">${kind==='members'?'Mitglied suchen':'Team oder Mitspieler suchen'}<input id="registry-search" type="search" placeholder="Name, Team oder E-Mail …"></label><div id="registry-list"><p>Geschützte Daten werden geladen …</p></div>`;
+  root.innerHTML=`<div class="registry-toolbar"><button class="button light" data-view="board">← Vorstand</button><button class="button light" data-view="${kind==='members'?'registrations':'members'}">${kind==='members'?'Turnieranmeldungen':'Mitgliederliste'}</button><button class="button light" data-registry="new">${kind==='members'?'Mitglied anlegen':'Team nachtragen'}</button></div><p class="notice">${ctx.demo()?'DEMO · Nur erfundene Daten verwenden. Änderungen bleiben im Arbeitsspeicher.':'Geschützte Daten · ausschließlich für den Vorstand.'}</p>${errorBox}<div id="registry-config"></div><div id="registry-editor"></div><label class="registry-search">${kind==='members'?'Mitglied suchen':'Team oder Mitspieler suchen'}<input id="registry-search" type="search" placeholder="Name, Team oder E-Mail …"></label><div id="registry-list"><p>Geschützte Daten werden geladen …</p></div>`;
   const actionResult=document.createElement('p');actionResult.id='registry-action-result';actionResult.className='notice';actionResult.style.overflowWrap='anywhere';actionResult.setAttribute('role','status');actionResult.hidden=true;root.querySelector('.registry-error').after(actionResult);
   root.addEventListener('click',handleClick);root.querySelector('#registry-search').addEventListener('input',paintList);
   if(kind==='members'){root.querySelector('#registry-search').placeholder='Name, Mitgliedsnummer, E-Mail oder Telefon …';finance.mount(root);}
@@ -125,18 +125,14 @@ export function createRegistryManagement(ctx){
    }
   }catch(err){if(g===generation)error(err);}
  }
- function paint(){if(!root||!allowed())return;paintConfig();paintImport();paintList();}
+ function paint(){if(!root||!allowed())return;paintConfig();paintList();}
  function paintConfig(){
   const target=root.querySelector('#registry-config');if(mode==='members')return;
   if(target.querySelector('form')?.contains(document.activeElement))return;
   const s=ctx.settings(eventId),prices=normalizePrices(s?.prices);
-  target.innerHTML=s?`<section class="panel registry-settings"><h3>Anmeldung & Plätze</h3><p><b>${s.confirmedCount}/${s.capacity}</b> Startplätze · <b>${s.waitlistCount}</b> Wartelistenteams · Anmeldung <b>${s.open?'geöffnet':'geschlossen'}</b></p><form id="registration-settings"><label>Maximale Teamzahl<input name="capacity" type="number" min="1" max="32" value="${s.capacity}" required></label><div class="form-columns">${Object.entries({entryMember:"Startgebühr Mitglied",entryGuest:"Startgebühr Nichtmitglied",beerMember:"Fassbier Mitglied",beerGuest:"Fassbier Nichtmitglied"}).map(([key,label])=>field(label+" (€ pro Person)",key,prices[key]/100,"number",'required min="0" max="250" step="0.01"')).join('')}</div><p class="legend">Neue Preise gelten für neue Anmeldungen. Bereits gespeicherte Anmeldungen behalten ihren Preisstand.</p><label class="checkbox-label"><input name="open" type="checkbox" ${s.open?'checked':''}>Anmeldung auf der Startseite freigeben</label><button class="button light" type="submit">Einstellungen speichern</button></form><p class="legend">Nach dem Update einmal die E-Mail-Zuordnungen aus bestehenden Anmeldungen aufbauen; bei späteren Änderungen geschieht das automatisch.</p><button class="button light" data-registry="claims">Bestehende E-Mail-Zuordnungen prüfen & aufbauen</button><button class="button light" data-registry="people-sync">Bestehende Team-/Personenzuordnungen ergänzen (ohne E-Mails)</button></section>`:`<section class="panel"><h3>Anmeldung vorbereiten</h3><p>Zuerst vorhandene Anmeldungen importieren oder nachtragen. Danach die Anmeldung auf der Startseite freigeben.</p><button class="button light" data-registry="initialize">Anmeldung für 32 Teams einrichten</button></section>`;
+  const wasOpen=target.querySelector('details')?.open??false;
+  target.innerHTML=s?`<details class="panel registry-settings" ${wasOpen?'open':''}><summary>Anmeldung & Plätze</summary><p><b>${s.confirmedCount}/${s.capacity}</b> Startplätze · <b>${s.waitlistCount}</b> Wartelistenteams · Anmeldung <b>${s.open?'geöffnet':'geschlossen'}</b></p><form id="registration-settings"><label>Maximale Teamzahl<input name="capacity" type="number" min="1" max="32" value="${s.capacity}" required></label><div class="form-columns">${Object.entries({entryMember:"Startgebühr Mitglied",entryGuest:"Startgebühr Nichtmitglied",beerMember:"Fassbier Mitglied",beerGuest:"Fassbier Nichtmitglied"}).map(([key,label])=>field(label+" (€ pro Person)",key,prices[key]/100,"number",'required min="0" max="250" step="0.01"')).join('')}</div><p class="legend">Neue Preise gelten für neue Anmeldungen. Bereits gespeicherte Anmeldungen behalten ihren Preisstand.</p><label class="checkbox-label"><input name="open" type="checkbox" ${s.open?'checked':''}>Anmeldung auf der Startseite freigeben</label><button class="button light" type="submit">Einstellungen speichern</button></form><p class="legend">Nach dem Update einmal die E-Mail-Zuordnungen aus bestehenden Anmeldungen aufbauen; bei späteren Änderungen geschieht das automatisch.</p><button class="button light" data-registry="claims">Bestehende E-Mail-Zuordnungen prüfen & aufbauen</button><button class="button light" data-registry="people-sync">Bestehende Team-/Personenzuordnungen ergänzen (ohne E-Mails)</button></details>`:`<details class="panel registry-settings" ${wasOpen?'open':''}><summary>Anmeldung & Plätze</summary><h3>Anmeldung vorbereiten</h3><p>Zuerst die Anmeldung einrichten und vorhandene Teams nachtragen. Danach die Anmeldung auf der Startseite freigeben.</p><button class="button light" data-registry="initialize">Anmeldung für 32 Teams einrichten</button></details>`;
   target.querySelector('form')?.addEventListener('submit',ev=>{ev.preventDefault();const f=ev.currentTarget;void run(()=>api().configureRegistration(eventId,{capacity:Number(f.elements.capacity.value),open:f.elements.open.checked,prices:Object.fromEntries(Object.keys(prices).map(key=>[key,Math.round(Number(f.elements[key].value)*100)]))}),'Anmeldeeinstellungen gespeichert.');});
- }
- function paintImport(){
-  const target=root.querySelector('#registry-import');if(target.childElementCount)return;
-  target.innerHTML=`<details class="panel private-import"><summary>Vorbereitete Mitglieder & Anmeldungen importieren</summary><p>Die private JSON-Datei aus <b>TURNIER/PRIVAT</b> auswählen. Bereits importierte Datensätze werden übersprungen; vorhandene Bearbeitungen bleiben erhalten.</p><input id="private-import-file" type="file" accept=".json,application/json" aria-label="Private Importdatei auswählen"><div id="private-import-preview"></div><p id="private-import-progress" role="status"></p></details>`;
-  target.querySelector('input').addEventListener('change',async ev=>{const g=generation;pendingImport=null;const preview=target.querySelector('#private-import-preview');preview.innerHTML='';try{const file=ev.target.files[0];if(!file)return;if(file.size>4000000)throw Error('Die Importdatei ist zu groß.');const parsed=validatePrivateImport(JSON.parse(await file.text()));if(g!==generation||!allowed())return;pendingImport=parsed;preview.innerHTML=`<p><b>${pendingImport.members.length} Mitglieder</b> und <b>${pendingImport.registrations.length} Teamanmeldungen</b> für das 15. Turnier sowie <b>${pendingImport.archiveLineups.length} historische Spielerplätze</b>. Vorhandene Spielplanteams werden dadurch nicht verändert. Fehlende persönliche E-Mail-Adressen sind anschließend zu ergänzen.</p><button class="button" data-registry="import">Geprüfte Datei jetzt importieren</button>`;}catch(err){if(g===generation)error(err);}});
  }
  function paintList(){
   if(!root||!allowed())return;const query=nameKey(root.querySelector('#registry-search').value),list=root.querySelector('#registry-list');
@@ -181,14 +177,11 @@ export function createRegistryManagement(ctx){
   }
   if(action==='people-sync'){void run(async()=>{const result=await api().reconcileExistingTeamPeople(eventId);ctx.toast(result.teams+' Teamzuordnungen ergänzt · '+result.linked+' bestehende Konten verbunden · '+result.unmatched+' Personen ohne eindeutiges Konto. Keine Einladungsmails versendet.');});return;}
   if(action==='claims'){void run(async()=>{const result=await api().rebuildRegistrationClaims(eventId);ctx.toast(result.emails+' E-Mail-Zuordnungen aufgebaut · '+result.duplicates+' mögliche Dubletten bitte prüfen.');});return;}
-  if(action==='initialize'){void run(()=>api().initializeRegistration(eventId),'Anmeldung eingerichtet. Vor Freigabe bitte vorhandene Teams importieren.');return;}
+  if(action==='initialize'){void run(()=>api().initializeRegistration(eventId),'Anmeldung eingerichtet. Vor Freigabe bitte vorhandene Teams nachtragen.');return;}
   if(action==='cancel'&&row&&confirm(`Absage von „${row.teamName}“ erfassen? Ein frei werdender Platz wird erst nach deiner Bestätigung an die Warteliste vergeben.`))void run(()=>api().saveRegistration(eventId,row,{entryId:id,status:'cancelled'}),row.teamId?'Absage erfasst. Bitte das bereits übernommene Spielplanteam unter Teams und anschließend die Warteliste prüfen.':'Absage erfasst. Warteliste bitte prüfen.');
   if(action==='promote'&&row&&confirm(`„${row.teamName}“ von der Warteliste auf einen Startplatz übernehmen? Bitte das Team anschließend persönlich informieren.`))void run(()=>api().saveRegistration(eventId,row,{entryId:id,status:'confirmed'}),'Startplatz bestätigt. Bitte das Team informieren.');
   if(action==='transfer'&&row)void run(()=>{if(entries.some(other=>other.id!==row.id&&other.status==='confirmed'&&other.teamId&&(other.teamId===row.teamId||nameKey(other.teamName)===nameKey(row.teamName))))throw Error('Eine andere bestätigte Anmeldung ist bereits mit diesem Spielplanteam verknüpft. Bitte die beiden Anmeldungen und Teamnamen prüfen.');return ctx.transferTeam(row,{invite:root.querySelector('#invite-on-transfer')?.checked??false});},'Team in den Spielplan übernommen.');
   if(action==='invite'&&row)void run(()=>ctx.invitePlayers(row),'Spielerkonten bearbeitet; neue Konten erhalten einen Passwortlink.');
-  if(action==='import'&&pendingImport&&confirm('Die angezeigten privaten Daten jetzt in die geschützte Vereinsverwaltung importieren?')){
-   const data=pendingImport;void run(async()=>{const result=await api().importPrivateRecords(data,(m,r)=>{if(root&&allowed())root.querySelector('#private-import-progress').textContent=`Import läuft: ${m} Mitglieder und ${r} Teams neu übernommen …`;});if(root&&allowed()){root.querySelector('#private-import-progress').textContent=`Fertig: ${result.addedMembers} Mitglieder und ${result.addedEntries} Teams und ${result.addedArchiveSlots??0} historische Spielerplätze übernommen. Bestehende Datensätze wurden übersprungen.`;root.querySelector('#private-import-preview').innerHTML='';pendingImport=null;}},'Privater Import abgeschlossen.');
-  }
  }
  return{clear,mount,refresh:paint};
 }

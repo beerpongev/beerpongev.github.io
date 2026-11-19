@@ -108,6 +108,8 @@ function navigateView(next){
   if(next==='history'&&!canHistory()){toast('Bitte zuerst anmelden.');return;}
   if(busy)return;
   if(!Object.hasOwn(routeNames,next))return;
+  // Explizite Aufgabenlinks behalten ihren Filter; gewöhnliche Navigation startet ohne Altfilter.
+  const nextURL=new URL(location.href);nextURL.searchParams.delete('filter');history.replaceState({},'',nextURL);
   if(['admin','registrations'].includes(next)&&isReadOnly()){
     const active=catalog.find(t=>!t.archived&&!t.externalUrl);if(active){void chooseTournament(active.id).then(()=>{if(['history','people'].includes(next)||currentTournament()?.externalUrl)void ensureArchives().then(()=>{if(['history','people'].includes(view))render(true);});
   view=next;syncLocation(true);render(true);});return;}
