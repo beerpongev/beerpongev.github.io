@@ -1,6 +1,6 @@
 /** Aktualisierung erst nach bewusster Aktion; Eingaben und Unterschriften berücksichtigen. */
 export async function installUpdates(){
- const version=document.querySelector('#app-version');if(version)version.textContent='Version 12.3';
+ const version=document.querySelector('#app-version');if(version)version.textContent='Version 12.4';
  if(!('serviceWorker'in navigator)||!(location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname)))return;
  const dirty=new WeakSet();let changing=false;
  document.addEventListener('input',event=>{const form=event.target.closest('form');if(form)dirty.add(form);},true);

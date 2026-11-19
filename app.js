@@ -46,7 +46,7 @@ const demoRegistry=createDemoRegistry();
 let registrationSettings={};
 const clubAdministration=createClubAdministration({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,isBoard:board,signedIn:()=>!!user&&!user.isAnonymous,settings:()=>clubSettings,applySettings:settings=>{clubSettings=settings;setContributionRates(settings.contributionRates);},eventSettings:()=>registrationEvent(selectedTournamentId),tournamentId:()=>selectedTournamentId,catalog:()=>catalog,archives:getClubArchives,ensureArchives,toast});
 const registrationEvent=id=>demo?demoRegistry.getSettings(id):registrationSettings[id];
-const registryManagement=createRegistryManagement({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,isBoard:board,settings:registrationEvent,settingsChanged:()=>render(),toast,transferTeam,invitePlayers,accountLink:m=>memberWorkflows.accountLink(m)});
+const registryManagement=createRegistryManagement({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,isBoard:board,settings:registrationEvent,teams:()=>state?.teams??null,settingsChanged:()=>render(),toast,transferTeam,invitePlayers,accountLink:m=>memberWorkflows.accountLink(m)});
 const memberWorkflows=createMemberWorkflows({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,isBoard:board,user:()=>user,users:()=>users,toast,dialog:openDialog,closeDialog:()=>$('#dialog').close(),download:downloadPrivatePDF,downloadAll:rows=>downloadMemberships(rows),refreshRegistry:()=>{view='members';render(true);}});
 async function transferTeam(row,{invite=false}={}){
  if(invite&&!demo&&row.players.some(p=>!p.email))throw Error('Bitte vor dem Einladen die persönlichen E-Mail-Adressen ergänzen oder die automatische Einladung abwählen.');
