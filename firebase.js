@@ -299,12 +299,14 @@ export async function saveMyProfile(input,expectedRevision){
  await api.runTransaction(db,async tx=>{const ref=api.doc(db,'memberProfiles',user.uid),old=await tx.get(ref);if(!old.exists())throw Error('Dein Konto ist noch nicht verknüpft.');const p=old.data();if(p.revision!==expectedRevision)throw Error('Die Daten wurden inzwischen geändert. Bitte neu öffnen.');tx.update(api.doc(db,'members',p.memberId),{...contact,updatedAt:api.serverTimestamp()});tx.set(ref,{...p,...contact,revision:p.revision+1,updatedAt:api.serverTimestamp()});});
 }
 export async function importPrivateRecords(input,onProgress=()=>{}){
- await requireBoardAccount();const data=validatePrivateImport(input);await initializeRegistration(data.tournamentId);
+ await requireBoardAccount();const data=validatePrivateImport(input);
+ if(data.archiveLineups.length&&!data.members.length&&!data.registrations.length)return{addedMembers:0,addedEntries:0,addedArchiveSlots:await importHistoricalLineups(data.archiveLineups)};
+ await initializeRegistration(data.tournamentId);
  const existingMembers=new Set((await listMembers()).map(m=>m.id)),existingEntries=new Set((await listRegistrations(data.tournamentId)).map(r=>r.id));
  let addedMembers=0,addedEntries=0;
  for(const member of data.members){if(existingMembers.has(member.id))continue;const{id,...fields}=member;await saveMember(id,fields);addedMembers++;onProgress(addedMembers,addedEntries);}
  for(const row of data.registrations){if(existingEntries.has(row.id))continue;const{id,sourceDate,...fields}=row;const event=await api.getDoc(eventRef(data.tournamentId)),s=event.data();await saveRegistration(data.tournamentId,fields,{entryId:id,status:s.confirmedCount<s.capacity&&s.waitlistCount===0?'confirmed':'waitlist',source:'import',sourceDate});addedEntries++;onProgress(addedMembers,addedEntries);}
- return{addedMembers,addedEntries};
+ return{addedMembers,addedEntries,...(data.archiveLineups.length?{addedArchiveSlots:await importHistoricalLineups(data.archiveLineups)}:{})};
 }
 
 export async function loadHistoryStates(catalog){liveOnly();if(!api||!db)return[];return Promise.all(catalog.filter(t=>t.archived&&!t.externalUrl).map(async t=>{const s=await api.getDoc(api.doc(db,'tournaments',t.id));return s.exists()?{meta:t,state:s.data()}:null;})).then(rows=>rows.filter(Boolean));}

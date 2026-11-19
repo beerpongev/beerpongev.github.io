@@ -144,10 +144,16 @@ export function createClubStore(environment){
  }
  async function importHistoricalLineups(items){
   const {api,db}=await board();if(!Array.isArray(items)||items.length>500)throw Error('Ungültige Spielerzuordnung.');
+  // Wiederholungen und eindeutige bestehende Personen verwenden dieselbe Kennung.
+  const known=await listPersons(),existingSlots=await listParticipations();
   let count=0;
   for(const item of items){
    if(!/^hist-[a-f0-9]{20}$/.test(item.assignmentId)||!/^official-(11|12|13|14)-20\d{2}$/.test(item.tournamentId)||![1,2].includes(item.slot))throw Error('Unbekannte Turnierzuordnung.');
-   const key=`${item.assignmentId}__${item.slot}`,person=item.personId||crypto.randomUUID();
+   const key=`${item.assignmentId}__${item.slot}`,sameName=known.filter(p=>fullName(p).toLocaleLowerCase('de')===fullName(item).toLocaleLowerCase('de'));
+   const previous=existingSlots.find(p=>p.id===key),unknown=item.firstName==='Spieler'&&/^[12]$/.test(item.lastName);
+   if(previous&&fullName(previous)!==fullName(item))throw Error('Bestehender historischer Teamplatz enthält einen anderen Namen. Bitte zuerst prüfen.');
+   if(!previous&&!unknown&&sameName.length>1&&!known.some(p=>p.id===item.personId))throw Error('Mehrere Personen mit gleichem Namen. Bitte zuerst die Personenverwaltung prüfen.');
+   const person=previous?.personId??(!unknown&&sameName.length===1?sameName[0].id:item.personId||crypto.randomUUID());
    await api.runTransaction(db,async tx=>{
     const ref=api.doc(db,'participations',key),old=await tx.get(ref),personRef=api.doc(db,'persons',person),existing=await tx.get(personRef),publicRef=api.doc(db,'publicPlayers',person),published=await tx.get(publicRef);
     if(old.exists()&&old.data().personId!==person)throw Error('Eine Besetzung ist bereits anders zugeordnet. Bitte zuerst den bestehenden Datensatz prüfen.');

@@ -1,5 +1,5 @@
 // Nur öffentliche App-Dateien; niemals Auth-/Firestore-Antworten cachen.
-const VERSION='beerpong-v10-verein-20261118';
+const VERSION='beerpong-v10-archiv-20261119';
 const CORE=["./","./index.html","./style.css","./responsive.css","./club.css","./registration.css","./app.js","./engine.js","./scheduler.js","./firebase.js","./transaction.js","./config.js","./ui.js","./data.js","./documents.js","./membership.js","./club.js","./registration.js","./registration-demo.js","./registration-ui.js","./member-ui.js","./member-finance.js","./member-format.js","./contributions.js","./debit-export.js","./dates.js","./pricing.js","./team-transfer.js","./bank-corrections.js","./club-store.js","./club-admin-ui.js","./history.js","./finance-tools.js","./updates.js","./club-features.css","./manifest.json","./icons/academy-32.png","./icons/academy-192.png","./icons/academy-512.png"];
 const OPTIONAL=["./membership-pdf.js","./vendor/fontkit.es.min.js","./vendor/fonts/NotoSans-Bold.ttf","./vendor/fonts/NotoSans-Regular.ttf","./vendor/pako.esm.js","./vendor/pdf-lib.esm.min.js","./content/documents.json","./content/archive-11.json","./content/archive-12.json","./content/archive-13.json","./content/archive-14.json"];
 self.addEventListener('install',event=>event.waitUntil(caches.open(VERSION).then(cache=>cache.addAll(CORE))));

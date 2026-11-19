@@ -314,7 +314,7 @@
         },
         {
           "position": 4,
-          "name": "Beer Pong Penguins",
+          "name": "PingPong-Pinguins",
           "played": 3,
           "won": 0,
           "drawn": 0,
@@ -728,7 +728,7 @@
       "id": "group-12",
       "group": "E",
       "a": "FC Schwips",
-      "b": "Beer Pong Penguins",
+      "b": "PingPong-Pinguins",
       "score": [
         1,
         0
@@ -867,7 +867,7 @@
     {
       "id": "group-26",
       "group": "E",
-      "a": "Beer Pong Penguins",
+      "a": "PingPong-Pinguins",
       "b": "Knief und ich",
       "score": [
         0,
@@ -937,7 +937,7 @@
     {
       "id": "group-33",
       "group": "E",
-      "a": "Beer Pong Penguins",
+      "a": "PingPong-Pinguins",
       "b": "Peter Pong & Trinkerbell",
       "score": [
         0,

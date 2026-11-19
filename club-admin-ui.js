@@ -2,7 +2,7 @@ import {escapeHTML as e,localDate} from './ui.js';
 import {needsMembershipReview,fullName,nameKey,euro} from './registration.js';
 import {contributionFor,legacyContribution} from './contributions.js';
 import {annualFee} from './pricing.js';
-import {parseHistoryCSV,mountHistory} from './history.js';
+import {mountHistory} from './history.js';
 
 export function legalView(kind,settings={}){
  const legal=settings.legal??{},missing=['address','representatives','registerCourt','registerNumber'].some(k=>!legal[k]);
@@ -17,7 +17,7 @@ export function createClubAdministration(ctx){
  function clear(){generation++;}
  async function mountBoard(root){
   const g=++generation;if(!ctx.isBoard())return;
-  root.innerHTML='<p class="club-error form-error" hidden role="alert"></p><section class="panel"><h3>Offene Aufgaben</h3><div id="board-tasks">Wird geladen …</div><button class="text-button" id="tasks-reload">Aufgaben aktualisieren</button></section><section class="panel"><h3>Spieler & Ergebnishistorie</h3><p>Personen, Mitgliedschaft und Turnierteilnahmen verbinden; historische Team-Besetzungen nach geprüfter CSV übernehmen.</p><div class="admin-actions"><button class="button light" data-view="history">Ergebnishistorie öffnen</button><button class="button light" data-view="people">Personen & Archiv-CSV</button></div></section><section class="panel"><h3>Vereinsangaben & Jahresbeitrag</h3><div id="club-settings-form"></div></section>';
+  root.innerHTML='<p class="club-error form-error" hidden role="alert"></p><section class="panel"><h3>Offene Aufgaben</h3><div id="board-tasks">Wird geladen …</div><button class="text-button" id="tasks-reload">Aufgaben aktualisieren</button></section><section class="panel"><h3>Spieler & Ergebnishistorie</h3><p>Personen, Mitgliedschaft und Turnierteilnahmen verbinden; bestätigte historische Team-Besetzungen durchsuchen.</p><div class="admin-actions"><button class="button light" data-view="history">Ergebnishistorie öffnen</button><button class="button light" data-view="people">Personen & Teilnahmen</button></div></section><section class="panel"><h3>Vereinsangaben & Jahresbeitrag</h3><div id="club-settings-form"></div></section>';
   const refresh=async()=>{
    try{
     const api=ctx.backend(),[members,entries,applications,contributions]=await Promise.all([api.listMembers(),api.listRegistrations(ctx.tournamentId()),api.listMemberships(),api.listContributions(localDate().slice(0,4))]);
@@ -44,7 +44,7 @@ export function createClubAdministration(ctx){
  }
  async function mountPeople(root){
   const g=++generation;if(!ctx.isBoard())return;
-  root.innerHTML='<button class="button light" data-view="board">← Vorstand</button><h2>Personen & Archiv-CSV.</h2><p class="notice">Geschützte Zuordnungen; keine Veröffentlichung vollständiger Spielernamen.</p><p class="club-error form-error" hidden role="alert"></p><section class="panel"><h3>Historische Spielerbesetzungen importieren</h3><p>Die ausgefüllte Datei ARCHIV-SPIELERZUORDNUNG-2022-2025.csv auswählen. Jede Besetzung bleibt an ihr Turnierjahr gebunden. Gleiche Namen werden erst nach deiner ausdrücklichen Prüfung verbunden.</p><input id="history-csv" type="file" accept=".csv,text/csv" aria-label="Ausgefüllte Archiv-CSV"><div id="history-csv-preview"></div></section><section class="panel"><label>Person suchen<input id="person-search" type="search" placeholder="Name oder Namensvariante …"></label><div id="persons-list">Wird geladen …</div></section>';
+  root.innerHTML='<button class="button light" data-view="board">← Vorstand</button><h2>Personen & Teilnahmen.</h2><p class="notice">Geschützte Zuordnungen; keine Veröffentlichung vollständiger Spielernamen.</p><p class="club-error form-error" hidden role="alert"></p><section class="panel"><label>Person suchen<input id="person-search" type="search" placeholder="Name oder Namensvariante …"></label><div id="persons-list">Wird geladen …</div></section>';
   let persons=[],participations=[],members=[],publicProfiles=[];
   const reload=async()=>{[persons,participations,members,publicProfiles]=await Promise.all([ctx.backend().listPersons(),ctx.backend().listParticipations(),ctx.backend().listMembers(),ctx.backend().listPublicPlayers()]);if(allowed(root,g))paint();};
   const paint=()=>{
@@ -54,23 +54,6 @@ export function createClubAdministration(ctx){
   };
   root.addEventListener('submit',async event=>{const form=event.target.closest('form[data-public-player]');if(!form)return;event.preventDefault();try{if(form.elements.published.checked&&(!form.elements.displayName.value.trim()||!form.elements.consent.checked))throw Error('Bitte Anzeigenamen und abgestimmte Veröffentlichung bestätigen.');await ctx.backend().savePublicPlayer(form.dataset.publicPlayer,{published:form.elements.published.checked,displayName:form.elements.displayName.value,aliases:form.elements.publicAliases.value.split('\n').filter(Boolean)});if(allowed(root,g)){ctx.toast(form.elements.published.checked?'Sportprofil veröffentlicht.':'Öffentliches Sportprofil entfernt.');await reload();}}catch(err){if(allowed(root,g))error(root,err);}});
   root.querySelector('#person-search').oninput=paint;
-  root.querySelector('#history-csv').onchange=async ev=>{
-   const preview=root.querySelector('#history-csv-preview');preview.replaceChildren();
-   try{
-    const file=ev.target.files[0];if(!file)return;if(file.size>2000000)throw Error('CSV-Datei zu groß.');
-    const parsed=await parseHistoryCSV(await file.text(),ctx.catalog(),ctx.archives());if(!allowed(root,g))return;
-    if(!parsed.items.length){preview.innerHTML='<p>Die Datei enthält noch keine ausgefüllten Spielernamen.</p>';return;}
-    // Ohne ausdrückliche Bestätigung niemals allein wegen Namensgleichheit zusammenführen.
-    const identities=[...new Map(parsed.items.map(p=>[nameKey(fullName(p)),p])).values()],previousByName=new Map();
-    for(const person of identities){const ids=new Set(parsed.items.filter(item=>nameKey(fullName(item))===nameKey(fullName(person))).flatMap(item=>participations.filter(p=>p.tournamentId===item.tournamentId&&(p.teamId===item.assignmentId||p.assignmentId===item.assignmentId)&&p.slot===item.slot).map(p=>p.personId)));if(ids.size>1)throw Error('Gleichnamige Spieler sind bereits verschiedenen Personen zugeordnet. Bitte diese Zeilen getrennt prüfen und importieren.');if(ids.size)previousByName.set(nameKey(fullName(person)),[...ids][0]);}
-    preview.innerHTML=`<form id="history-import"><p>${parsed.rows} Teamzeilen · ${parsed.items.length} ausgefüllte Teamplätze · ${parsed.empty} leere Teamplätze.</p><p>Für jeden Namen die Person prüfen. Gleichnamige unterschiedliche Personen bitte vorerst getrennt importieren; betroffene Zeilen können dafür in getrennten Dateien bearbeitet werden.</p>${identities.map((p,i)=>`<label>${e(fullName(p))}<select name="person-${i}"><option value="@new">Neue dauerhafte Person anlegen</option>${persons.map(x=>`<option value="${e(x.id)}" ${previousByName.get(nameKey(fullName(p)))===x.id?'selected':''}>${nameKey(fullName(x))===nameKey(fullName(p))?'Namensvorschlag: ':''}${e(fullName(x))}${x.email?' · '+e(x.email):''}</option>`).join('')}</select></label>`).join('')}<details><summary>Alle zu importierenden Besetzungen prüfen</summary>${parsed.items.map(p=>`<p>${e(p.year)} · ${e(p.teamName)} · Spieler ${p.slot}: ${e(fullName(p))}${p.comment?' · '+e(p.comment):''}</p>`).join('')}</details><label class="checkbox-label"><input name="confirmed" type="checkbox" required>Ich habe die Besetzungen geprüft. Gleiche Namen in dieser Datei gehören jeweils zur selben Person; die gewählten bestehenden Personen stimmen überein.</label><button class="button" type="submit">Geprüfte Besetzungen importieren</button><p id="history-import-status" role="status"></p></form>`;
-    const form=preview.querySelector('form');form.onsubmit=async event=>{event.preventDefault();if(!form.reportValidity())return;const button=form.querySelector('button[type=submit]');button.disabled=true;try{
-     const map=new Map(identities.map((p,i)=>[nameKey(fullName(p)),form.elements['person-'+i].value==='@new'?crypto.randomUUID():form.elements['person-'+i].value]));
-     const items=parsed.items.map(p=>({...p,personId:map.get(nameKey(fullName(p)))})),count=await ctx.backend().importHistoricalLineups(items);
-     if(allowed(root,g)){form.innerHTML=`<p role="status">${count} Spielerplätze übernommen. Die Ergebnishistorie kann nun nach diesen Personen durchsucht werden.</p>`;await reload();}
-    }catch(err){if(allowed(root,g))error(root,err);button.disabled=false;}};
-   }catch(err){if(allowed(root,g))error(root,err);}
-  };
   try{await ctx.ensureArchives();await reload();}catch(err){if(allowed(root,g))error(root,err);}
  }
  async function mountResults(root){

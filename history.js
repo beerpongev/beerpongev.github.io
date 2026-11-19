@@ -2,8 +2,6 @@
 import * as E from './engine.js';
 import {escapeHTML as e} from './ui.js';
 import {nameKey,fullName} from './registration.js';
-import {parseCSV} from './contributions.js';
-import {digest} from './club-store.js';
 
 export function historyAppearances(catalog,archives,native=[]){
  const appearances=[];
@@ -31,32 +29,11 @@ export function historyAppearances(catalog,archives,native=[]){
  }
  return appearances.sort((a,b)=>b.date.localeCompare(a.date)||a.teamName.localeCompare(b.teamName,'de'));
 }
-export async function parseHistoryCSV(text,catalog,archives){
- const rows=parseCSV(text,';'),headers=rows.shift()??[],required=['Turnier-ID','Zuordnungs-ID','Jahr','Teamname','Spieler 1 Vorname','Spieler 1 Nachname','Spieler 2 Vorname','Spieler 2 Nachname'];
- if(required.some(key=>!headers.includes(key)))throw Error('Bitte die bereitgestellte CSV mit unveränderten Spaltenüberschriften verwenden.');
- const known=new Map();
- for(const a of archives)for(const group of a.groups)for(const team of group.teams){const id='hist-'+(await digest(JSON.stringify([a.id,group.letter,team.name]))).slice(0,20);known.set(id,{tournamentId:a.id,teamName:team.name,group:group.letter,meta:catalog.find(t=>t.id===a.id)});}
- const seen=new Set(),items=[];let empty=0;
- for(const [i,row]of rows.entries()){
-  const get=key=>String(row[headers.indexOf(key)]??'').trim(),id=get('Zuordnungs-ID'),match=known.get(id);
-  if(!match||seen.has(id)||get('Turnier-ID')!==match.tournamentId||get('Jahr')!==match.meta.date.slice(0,4)||get('Teamname')!==match.teamName)throw Error(`Zeile ${i+2}: Turnier, Jahr, Teamname oder Zuordnungs-ID wurde verändert oder ist doppelt.`);
-  seen.add(id);
-  const names=[];
-  for(const slot of [1,2]){
-   const firstName=get(`Spieler ${slot} Vorname`),lastName=get(`Spieler ${slot} Nachname`);
-   if(!firstName&&!lastName){empty++;continue;}
-   if(!firstName||!lastName||firstName.length>60||lastName.length>60)throw Error(`Zeile ${i+2}: Vor- und Nachname für Spieler ${slot} vollständig eintragen.`);
-   const key=nameKey(firstName+' '+lastName);if(names.includes(key))throw Error(`Zeile ${i+2}: Eine Person steht auf beiden Teamplätzen.`);names.push(key);
-   items.push({assignmentId:id,tournamentId:match.tournamentId,teamName:match.teamName,year:match.meta.date.slice(0,4),date:match.meta.date,edition:match.meta.edition,slot,firstName,lastName,comment:get('Bemerkung')});
-  }
- }
- return{items,empty,rows:rows.length};
-}
 export function mountHistory(root,{catalog,archives,native=[],participations=[],persons=[],publicPlayers=[],isBoard=false,own=false}){
  const publicParts=publicPlayers.flatMap(p=>(p.appearances??[]).map(a=>({...a,personId:p.id,firstName:p.displayName,lastName:'',publicAliases:p.aliases??[]})));
  if(!isBoard)participations=[...participations,...publicParts.filter(p=>!participations.some(own=>own.personId===p.personId&&own.tournamentId===p.tournamentId&&own.teamName===p.teamName))];
  const all=historyAppearances(catalog,archives,native);
- root.innerHTML=`<div class="section-head"><div><p class="eyebrow">GUTE SPIELE BLEIBEN</p><h2>Ergebnishistorie.</h2><p>Teams über mehrere Turniere verfolgen${isBoard?' und bestätigte Spielerzuordnungen durchsuchen':''}.</p></div></div><div class="filter-bar"><label>${isBoard?'Team oder Spieler':publicPlayers.length?'Team oder freigegebener Spielername':own&&participations.length?'Team oder eigener Spielername':'Team suchen'}<input id="history-search" type="search" placeholder="Teamname${isBoard?' oder Spielername':''} …"></label><label>Turnierjahr<select id="history-year"><option value="all">Alle Jahre</option>${[...new Set(all.map(a=>a.year))].sort().reverse().map(y=>`<option>${y}</option>`).join('')}</select></label>${participations.length?`<label>Person<select id="history-person"><option value="">Alle Teams</option>${[...new Map(participations.map(p=>[p.personId,p])).values()].map(p=>`<option value="${e(p.personId)}">${e(persons.find(x=>x.id===p.personId)?fullName(persons.find(x=>x.id===p.personId)):fullName(p))}</option>`).join('')}</select></label>`:''}</div><p class="notice">Gleiche Teamnamen können in verschiedenen Jahren andere Besetzungen haben. Historische Ergebniszahlen bleiben erhalten; heutige Ergebnisse zeigen übrige Becher. Becherdifferenzen verschiedener Regelstände werden nicht addiert.</p>${own&&participations.length?'<p class="legend">Deine bestätigten Teilnahmen stehen im Personenfilter zur Verfügung.</p>':''}${isBoard?'<p class="legend">Die Suche nach vollständigen Spielernamen ist ausschließlich für den Vorstand sichtbar. Fehlende historische Besetzungen können über die CSV ergänzt werden.</p>':''}<p id="history-count" role="status"></p><div id="history-results"></div>`;
+ root.innerHTML=`<div class="section-head"><div><p class="eyebrow">GUTE SPIELE BLEIBEN</p><h2>Ergebnishistorie.</h2><p>Teams über mehrere Turniere verfolgen${isBoard?' und bestätigte Spielerzuordnungen durchsuchen':''}.</p></div></div><div class="filter-bar"><label>${isBoard?'Team oder Spieler':publicPlayers.length?'Team oder freigegebener Spielername':own&&participations.length?'Team oder eigener Spielername':'Team suchen'}<input id="history-search" type="search" placeholder="Teamname${isBoard?' oder Spielername':''} …"></label><label>Turnierjahr<select id="history-year"><option value="all">Alle Jahre</option>${[...new Set(all.map(a=>a.year))].sort().reverse().map(y=>`<option>${y}</option>`).join('')}</select></label>${participations.length?`<label>Person<select id="history-person"><option value="">Alle Teams</option>${[...new Map(participations.map(p=>[p.personId,p])).values()].map(p=>`<option value="${e(p.personId)}">${e(persons.find(x=>x.id===p.personId)?fullName(persons.find(x=>x.id===p.personId)):fullName(p))}</option>`).join('')}</select></label>`:''}</div><p class="notice">Gleiche Teamnamen können in verschiedenen Jahren andere Besetzungen haben. Historische Ergebniszahlen bleiben erhalten; heutige Ergebnisse zeigen übrige Becher. Becherdifferenzen verschiedener Regelstände werden nicht addiert.</p>${own&&participations.length?'<p class="legend">Deine bestätigten Teilnahmen stehen im Personenfilter zur Verfügung.</p>':''}${isBoard?'<p class="legend">Die Suche nach vollständigen Spielernamen ist ausschließlich für den Vorstand sichtbar. Unbekannte Besetzungen sind ausdrücklich als Spieler 1 und Spieler 2 gekennzeichnet.</p>':''}<p id="history-count" role="status"></p><div id="history-results"></div>`;
  const paint=()=>{
   const query=nameKey(root.querySelector('#history-search').value),year=root.querySelector('#history-year').value,person=root.querySelector('#history-person')?.value??'';
   const matches=all.filter(a=>{

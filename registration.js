@@ -85,5 +85,16 @@ export function validatePrivateImport(data){
  const ids=new Set(),regIds=new Set();
  const members=data.members.map(m=>{need(/^[a-zA-Z0-9_-]{1,80}$/.test(m.id)&&!ids.has(m.id),'Doppelte oder ungültige Mitglieds-ID.');ids.add(m.id);return{id:m.id,...normalizeMember(m)};});
  const registrations=data.registrations.map(r=>{need(/^[a-zA-Z0-9_-]{1,128}$/.test(r.id)&&!regIds.has(r.id),'Doppelte oder ungültige Anmelde-ID.');regIds.add(r.id);return{id:r.id,...normalizeRegistration(r,{board:true,allowMissingEmail:true}),sourceDate:text(r.sourceDate,30)};});
- return{format:data.format,tournamentId:data.tournamentId,members,registrations};
+ need(Array.isArray(data.archiveLineups??[])&&(data.archiveLineups??[]).length<=500,'Zu viele historische Spielerplätze.');
+ const seenSlots=new Set();
+ const archiveLineups=(data.archiveLineups??[]).map(p=>{
+  const dates={'2022':'2022-12-30','2023':'2023-12-29','2024':'2024-12-27','2025':'2025-12-27'},edition=Number(p.year)-2011;
+  need(/^hist-[a-f0-9]{20}$/.test(p.assignmentId)&&p.tournamentId===`official-${edition}-${p.year}`&&p.date===dates[p.year]&&p.edition===edition&&[1,2].includes(p.slot),'Ungültige historische Zuordnung.');
+  need(typeof p.personId==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(p.personId)&&typeof p.teamName==='string'&&p.teamName.length>0&&p.teamName.length<=100,'Ungültige Person oder historisches Team.');
+  need([p.firstName,p.lastName].every(s=>typeof s==='string'&&s.trim().length>0&&s.length<=60),'Historischer Spielername fehlt.');
+  const key=p.assignmentId+'__'+p.slot;need(!seenSlots.has(key),'Doppelter historischer Teamplatz.');seenSlots.add(key);
+  return{assignmentId:p.assignmentId,tournamentId:p.tournamentId,teamName:p.teamName,year:p.year,date:p.date,edition,slot:p.slot,firstName:p.firstName.trim(),lastName:p.lastName.trim(),personId:p.personId};
+ });
+ need(Array.isArray(data.archiveLineups??[])&&archiveLineups.length<=500,'Zu viele historische Spielerplätze.');
+ return{format:data.format,tournamentId:data.tournamentId,members,registrations,archiveLineups};
 }
