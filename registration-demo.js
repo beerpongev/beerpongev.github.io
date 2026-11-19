@@ -36,6 +36,7 @@ export function createDemoRegistry(){
   configureRegistration:async(id,patch)=>{const s=getEvent(id);if(patch.capacity<s.confirmedCount||patch.capacity<1||patch.capacity>32)throw Error('Ungültige Kapazität.');Object.assign(s,patch,{revision:s.revision+1});},
   submitRegistration:async(id,input)=>{const s=getEvent(id);if(!s.open)throw Error('Die Anmeldung ist geschlossen.');return api.saveRegistration(id,normalizeRegistration(input),{status:s.confirmedCount<s.capacity&&!s.waitlistCount?'confirmed':'waitlist',source:'online'});},
   listRegistrations:async id=>{getEvent(id);return copy(entries.get(id));},
+  deleteRegistration:async(id,entryId)=>{const settings=getEvent(id),rows=entries.get(id),index=rows.findIndex(r=>r.id===entryId);if(index<0)return;const next=reconcileSettings(settings,rows[index],null);rows.splice(index,1);events.set(id,next);},
   saveRegistration:async(id,input,{entryId,status='confirmed',source='board',sourceDate='',contactEmailUpdates=[]}={})=>{
    const s=getEvent(id),rows=entries.get(id),old=rows.find(r=>r.id===entryId),key=entryId??crypto.randomUUID();
    for(const update of contactEmailUpdates){const member=members.get(update.memberId),person=input.players.find(p=>p.memberId===update.memberId&&p.verified&&p.member);if(!member||!person||member.email!==update.expectedEmail)throw Error('Kontaktadresse wurde geändert. Bitte neu prüfen.');}

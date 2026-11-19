@@ -199,6 +199,22 @@ export async function submitRegistration(id,input){
  });
 }
 export async function listRegistrations(id){await requireBoardAccount();checkRegistrationId(id);const snapshot=await api.getDocs(api.collection(db,'tournamentRegistrations',id,'entries'));return snapshot.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.sequence-b.sequence);}
+/** Entfernt nur die private Anmeldung; Mitglied, Konto und Spielplan bleiben erhalten. */
+export async function deleteRegistration(id,entryId,{expectedUpdatedAt}={}){
+ await requireBoardAccount();checkRegistrationId(id);
+ if(!/^[a-zA-Z0-9_-]{1,128}$/.test(entryId))throw Error('Ungültige Anmelde-ID.');
+ return api.runTransaction(db,async tx=>{
+  const ref=entryRef(id,entryId),[event,existing]=await Promise.all([tx.get(eventRef(id)),tx.get(ref)]);
+  if(!existing.exists())return;
+  if(!event.exists())throw Error('Anmeldeeinstellungen fehlen. Bitte zuerst prüfen.');
+  const row=existing.data();
+  if(expectedUpdatedAt!==undefined&&(row.updatedAt?.toMillis?.()??null)!==expectedUpdatedAt)throw Error('Die Anmeldung wurde inzwischen geändert. Bitte neu öffnen.');
+  const claims=await Promise.all([...new Set(row.players.map(p=>p.email).filter(Boolean))].map(async email=>{const ref=api.doc(db,'registrationClaims',id,'emails',email);return{ref,snap:await tx.get(ref)};}));
+  const settings=reconcileSettings(event.data(),{...row,id:entryId},null);
+  for(const claim of claims)if(claim.snap.exists()&&claim.snap.data().entryId===entryId)tx.delete(claim.ref);
+  tx.delete(ref);tx.set(eventRef(id),{...settings,updatedAt:api.serverTimestamp()});
+ });
+}
 export async function saveRegistration(id,input,{entryId,status='confirmed',source='board',sourceDate='',expectedUpdatedAt,contactEmailUpdates=[]}={}){
  await requireBoardAccount();checkRegistrationId(id);const key=entryId??crypto.randomUUID(),data=normalizeRegistration(input,{board:true,allowMissingEmail:true});
  if(!['confirmed','waitlist','cancelled'].includes(status))throw Error('Ungültiger Anmeldestatus.');

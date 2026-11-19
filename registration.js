@@ -73,9 +73,9 @@ export function needsMembershipReview(person,members){
  return membershipReviewSignature(person,members)!==(person.membershipFingerprint??'');
 }
 export function reconcileSettings(settings,before,after){
- const next={...settings,revision:settings.revision+1,lastEntry:after.id};
- for(const [status,key]of [['confirmed','confirmedCount'],['waitlist','waitlistCount']])next[key]+=(after.status===status?1:0)-(before?.status===status?1:0);
- if(!before)next.nextSequence++;
+ const next={...settings,revision:settings.revision+1,lastEntry:after?.id??''};
+ for(const [status,key]of [['confirmed','confirmedCount'],['waitlist','waitlistCount']])next[key]+=(after?.status===status?1:0)-(before?.status===status?1:0);
+ if(!before&&after)next.nextSequence++;
  need(next.confirmedCount>=0&&next.confirmedCount<=next.capacity,'Alle Startplätze sind vergeben.');
  need(next.waitlistCount>=0,'Die Warteliste wurde inzwischen geändert.');
  return next;
