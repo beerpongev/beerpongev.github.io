@@ -1,7 +1,7 @@
 import {installUpdates} from './updates.js';
 import {createClubAdministration,legalView} from './club-admin-ui.js';
 import {setActivePrices,setContributionRates} from './pricing.js';
-import {transferRegistrationTeam} from './team-transfer.js';
+import {transferRegistrationTeam,inviteRegistrationPlayers} from './team-transfer.js';
 import * as E from './engine.js';
 import * as cloud from './firebase.js';
 import {createDemoRegistry} from './registration-demo.js';
@@ -58,25 +58,17 @@ async function transferTeam(row,{invite=false}={}){
  targetId=result.teamId;
  if(demo){await adminCommit(()=>result.state);await demoRegistry.saveRegistration(selectedTournamentId,{...row,teamId:targetId},{entryId:row.id,status:row.status});}
  
- if(invite&&!demo){try{await invitePlayers({...row,teamId:targetId},{ask:false});}catch(error){throw Error('Team wurde übernommen. Die Einladungen waren nicht vollständig erfolgreich: '+humanError(error)+' Bitte über Spielerkonten einladen fortsetzen.');}}
+ if(invite&&!demo){try{return await invitePlayers({...row,teamId:targetId},{ask:false});}catch(error){throw Error('Team wurde übernommen. '+humanError(error));}}
+ return{notice:demo?'DEMO: Team übernommen; keine echten E-Mails versendet.':'Team in den Spielplan übernommen. Es wurden keine Einladungsmails angefordert, da die Versandoption ausgeschaltet war.'};
 }
 const nameKeyForTeam=value=>value.trim().toLocaleLowerCase('de');
 async function invitePlayers(row,{ask=true}={}){
  if(demo)throw Error('Echte Spielerkonten und E-Mails sind in der Demo deaktiviert.');
  if(!board()||!row.teamId||row.status!=='confirmed')throw Error('Bitte zuerst das bestätigte Team in den Spielplan übernehmen.');
  if(row.players.some(p=>!p.email)||row.players[0].email===row.players[1].email)throw Error('Bitte zwei unterschiedliche persönliche E-Mail-Adressen ergänzen.');
- if(ask&&!confirm(`Spielerkonten für ${row.players.map(p=>p.email).join(' und ')} mit diesem Team verknüpfen? Neue Konten erhalten per E-Mail einen Passwortlink. Bestehende Spielerkonten erhalten die neue Teamzuordnung.`))return;
+ if(ask&&!confirm(`Spielerkonten für ${row.players.map(p=>p.email).join(' und ')} mit diesem Team verknüpfen und Passwortlinks anfordern? Auch bestehende Konten erhalten einen Link an ihre Login-Adresse. Erneutes Auslösen fordert die Mails erneut an. Bestehende Passwörter werden erst beim Einlösen eines Links geändert.`))return{notice:'Einladung abgebrochen. Keine E-Mails angefordert.'};
  const identities=await cloud.listPersons(),members=await cloud.listMembers(),directory=await cloud.listAccounts();
- for(const [slot,person] of row.players.entries()){
-  if(!board())throw Error('Vorstandsberechtigung fehlt.');
-  const identity=identities.find(p=>p.id===person.personId)||identities.find(p=>p.email?.toLowerCase()===person.email.toLowerCase());
-  const member=members.find(m=>m.id===person.memberId);
-  const existing=directory.find(u=>u.uid===(identity?.accountUid||member?.accountUid))||directory.find(u=>u.email.toLowerCase()===person.email.toLowerCase()),data={name:`${person.firstName} ${person.lastName}`,email:person.email,role:'player',teamId:row.teamId,tournamentId:selectedTournamentId};
-  if((identity?.accountUid||member?.accountUid)&&!existing)throw Error('Das zugeordnete Benutzerkonto fehlt. Bitte zuerst die Benutzer-/Personenverknüpfung prüfen.');
-  if(existing?.disabled)throw Error('Das Konto wird entfernt. Bitte die Kontobereinigung zuerst abschließen.');
-  if(existing)data.email=existing.email; // Kontakt-E-Mail und unveränderte Anmeldeadresse auseinanderhalten.
-  if(existing){await cloud.setRole(existing.uid,{...data,role:existing.role==='guest'?'player':existing.role});await cloud.linkParticipationAccount(selectedTournamentId,row.teamId,slot+1,existing.uid);if(member)await cloud.linkMemberAccount(member.id,existing.uid);}else{const uid=await cloud.createAccount(data);await cloud.linkParticipationAccount(selectedTournamentId,row.teamId,slot+1,uid);if(member)await cloud.linkMemberAccount(member.id,uid);}
- }
+ return inviteRegistrationPlayers(cloud,row,{identities,members,directory,tournamentId:selectedTournamentId,canInvite:board});
 }
 function humanError(error){return({'auth/invalid-credential':'E-Mail oder Passwort stimmt nicht.','auth/invalid-email':'Bitte eine gültige E-Mail-Adresse eingeben.','auth/email-already-in-use':'Das Konto existiert bereits. Bitte dessen UID über „Vorhandenes Konto zuweisen“ verknüpfen.','auth/weak-password':'Bitte ein stärkeres Passwort verwenden.','auth/requires-recent-login':'Bitte erneut anmelden und die Aktion wiederholen.','auth/unauthorized-continue-uri':'Bitte beerpongev.github.io unter Firebase Authentication → Einstellungen → Autorisierte Domains hinzufügen.','auth/too-many-requests':'Zu viele Versuche. Bitte kurz warten.','permission-denied':'Keine Berechtigung. Bitte Teamzuordnung, Selbsteingabe und veröffentlichte Firestore-Regeln prüfen.','unavailable':'Keine Verbindung zu Firebase. Änderungen benötigen Internet.'})[error.code]??error.message??'Aktion fehlgeschlagen.';}
 async function task(fn,message,close=true){

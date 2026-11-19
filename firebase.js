@@ -212,6 +212,7 @@ export async function deleteRegistration(id,entryId,{expectedUpdatedAt}={}){
   const claims=await Promise.all([...new Set(row.players.map(p=>p.email).filter(Boolean))].map(async email=>{const ref=api.doc(db,'registrationClaims',id,'emails',email);return{ref,snap:await tx.get(ref)};}));
   const settings=reconcileSettings(event.data(),{...row,id:entryId},null);
   for(const claim of claims)if(claim.snap.exists()&&claim.snap.data().entryId===entryId)tx.delete(claim.ref);
+  for(const slot of [1,2])tx.delete(api.doc(db,'playerInvitations',id,'entries',entryId+'__'+slot));
   tx.delete(ref);tx.set(eventRef(id),{...settings,updatedAt:api.serverTimestamp()});
  });
 }
@@ -264,11 +265,18 @@ export async function recordContributionPayment(memberId,year,row,kind){
  });
 }
 
-export async function watchPrivateRegistry(id,{onEntries,onMembers,onError}){
+export async function recordPlayerInvitation(id,entryId,slot,{email,status,error='',requestId}){
+ await requireBoardAccount();checkRegistrationId(id);
+ if(!/^[a-zA-Z0-9_-]{1,128}$/.test(entryId)||![1,2].includes(slot)||!['processing','accepted','review'].includes(status)||!requestId)throw Error('Ungültiger Einladungsnachweis.');
+ const ref=api.doc(db,'playerInvitations',id,'entries',entryId+'__'+slot);
+ await api.runTransaction(db,async tx=>{const old=await tx.get(ref);if(status!=='processing'&&old.data()?.requestId!==requestId)throw Error('Der Einladungsstand wurde inzwischen geändert. Bitte prüfen.');tx.set(ref,{entryId,slot,email,status,error:String(error).slice(0,1000),requestId,requestedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});});
+}
+export async function watchPrivateRegistry(id,{onEntries,onMembers,onInvitations,onError}){
  await requireBoardAccount();checkRegistrationId(id);
  const stopEntries=typeof onEntries==='function'?api.onSnapshot(api.collection(db,'tournamentRegistrations',id,'entries'),s=>onEntries(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.sequence-b.sequence)),onError):()=>{};
  const stopMembers=typeof onMembers==='function'?api.onSnapshot(api.collection(db,'members'),s=>onMembers(s.docs.map(d=>({id:d.id,...d.data()}))),onError):()=>{};
- return()=>{stopEntries();stopMembers();};
+ const stopInvitations=typeof onInvitations==='function'?api.onSnapshot(api.collection(db,'playerInvitations',id,'entries'),s=>onInvitations(s.docs.map(d=>({id:d.id,...d.data()}))),onError):()=>{};
+ return()=>{stopEntries();stopMembers();stopInvitations();};
 }
 export async function saveMember(id,input,{expectedUpdatedAt}={}){
  await requireBoardAccount();const key=id??crypto.randomUUID(),seed=!id?mandateSequence(await listMembers()):null;
