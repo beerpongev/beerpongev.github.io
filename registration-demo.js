@@ -27,7 +27,7 @@ export function createDemoRegistry(){
   savePerson:async(id,p)=>persons.set(id,copy({...p,id})),
   saveClubSettings:async(value,{expectedRevision}={})=>{const revision=clubSettings.revision??-1;if(expectedRevision!==undefined&&expectedRevision!==revision)throw Error('Vereinsangaben wurden geändert.');clubSettings=copy({...value,revision:revision+1});return copy(clubSettings);},
   listDebitExports:async()=>copy([...debitExports.values()]),
-  recordDebitExport:async report=>{const id=crypto.randomUUID();debitExports.set(id,{id,year:report.year,purpose:report.purpose,totalCents:report.totalCents,items:report.rows.map(r=>({memberId:r.memberId,name:r.memberName,amountCents:r.amountCents,mandate:r.mandate})),status:'prepared',revision:0});return id;},
+  recordDebitExport:async report=>{const id=crypto.randomUUID();debitExports.set(id,{id,year:report.year,purpose:report.purpose,totalCents:report.totalCents,items:report.rows.map(r=>({memberId:r.memberId,name:r.memberName,amountCents:r.amountCents,mandate:r.mandate,...(r.allocations?{years:r.years,allocations:r.allocations,purpose:r.purpose}:{})})),status:'prepared',revision:0});return id;},
   setDebitExportStatus:async(id,status,revision)=>{const row=debitExports.get(id);if(!row||row.revision!==revision||row.status!=='prepared')throw Error('Export wurde geändert.');Object.assign(row,{status,revision:revision+1});},
   migrateMembershipPDFs:async()=>0,
   importHistoricalLineups:async items=>{for(const p of items){const id=p.personId||crypto.randomUUID();if(!persons.has(id))persons.set(id,{id,firstName:p.firstName,lastName:p.lastName,email:'',aliases:[],memberId:'',accountUid:''});participations.set(p.assignmentId+'__'+p.slot,{...p,personId:id,accountUid:''});}return items.length;},

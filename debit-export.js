@@ -27,6 +27,45 @@ export function debitPurpose(value,year){
  const base=String(value??'').trim().replace(/(?:\s*[-–/]?\s*)20\d{2}\s*$/,'').trim(),purpose=base+' '+year;
  if(!base||purpose.length>140||/[\r\n\x00-\x1f]/.test(base)||/^[=+@-]/.test(base))throw Error('Bitte einen Verwendungszweck mit höchstens 140 Zeichen einschließlich Jahreszusatz eingeben.');return purpose;
 }
+export function combinedDebitPurpose(value,years){
+ const ordered=[...new Set(years.map(String))].sort();if(!ordered.length||ordered.some(y=>!validYear(y)))throw Error('Ungültige Beitragsjahre.');
+ const base=String(value??'').trim().replace(/\s+(?:[-–]\s*)?20\d{2}(?:\s*\/\s*20\d{2})*\s*$/,'').trim(),purpose=base+' '+ordered.join('/');
+ if(!base||purpose.length>140||/[\r\n\x00-\x1f]/.test(base)||/^[=+@-]/.test(base))throw Error('Verwendungszweck einschließlich aller Beitragsjahre darf höchstens 140 Zeichen haben.');return purpose;
+}
+/** Ein Mitglied pro Bankzeile, mit getrennt nachvollziehbaren offenen Jahresbeträgen. */
+export function prepareCombinedDebitExport({members,byYear={},from,to,purpose=DEFAULT_DEBIT_PURPOSE,includeFormer=false,returns=[]}){
+ if(!validYear(from)||!validYear(to)||+from>+to||+to-+from>30)throw Error('Bitte einen Zeitraum von höchstens 31 Jahren wählen.');
+ const ids=new Set(),rows=[],issues=[],skipped=[],mandates=new Map(),states=[];
+ for(const source of members.slice().sort((a,b)=>a.firstName.localeCompare(b.firstName,'de')||a.lastName.localeCompare(b.lastName,'de'))){
+  if(!source.id||ids.has(source.id))throw Error('Mitgliedskennungen fehlen oder sind doppelt.');ids.add(source.id);
+  const m={...source,bankStatus:bankRisk(source,returns)?'unclear':source.bankStatus};
+  if(!m.active&&!includeFormer){skipped.push({id:m.id,name:fullName(m),reason:'Ehemaliges Mitglied'});continue;}
+  const annual=[],errors=[];
+  for(let y=+from;y<=+to;y++){
+   const year=String(y),c=contributionFor(m,year,byYear[year]??[]),amount=c.dueCents-c.paidCents;states.push([m.id,year,c.revision??-1,c.status,c.dueCents,c.paidCents,m.bankStatus]);
+   if(beforeEntryYear(m.joined,year)||['paid','waived','notdue'].includes(c.status)||amount<=0)continue;
+   if(c.status==='pending'){errors.push(year+': Einzug bereits vorgemerkt; vor einem weiteren Einzug prüfen.');continue;}
+   const report=prepareDebitExport({members:[m],entries:[c],year,purpose:DEFAULT_DEBIT_PURPOSE,includeFormer});
+   if(report.issues.length)errors.push(...report.issues.flatMap(i=>i.errors.map(s=>year+': '+s)));
+   annual.push(...report.rows.map(r=>({...r,year})));
+  }
+  if(!annual.length&&!errors.length){skipped.push({id:m.id,name:fullName(m),reason:'Keine offenen Beiträge im Zeitraum'});continue;}
+  const mandate=String(m.mandate??'').trim();if(mandate){if(!mandates.has(mandate))mandates.set(mandate,[]);mandates.get(mandate).push(m.id);}
+  let finalPurpose='';if(annual.length)try{finalPurpose=combinedDebitPurpose(purpose,annual.map(r=>r.year));}catch(error){errors.push(error.message);}
+  const amountCents=annual.reduce((sum,r)=>sum+r.amountCents,0);if(annual.length&&(!Number.isSafeInteger(amountCents)||amountCents>100000))errors.push('Gesamtbetrag pro Mitglied überschreitet 1.000 €.');
+  if(errors.length){issues.push({id:m.id,name:fullName(m),errors});continue;}
+  const first=annual[0];rows.push({...first,years:annual.map(r=>r.year),allocations:annual.map(r=>({year:r.year,amountCents:r.amountCents})),amountCents,purpose:finalPurpose});
+ }
+ const duplicates=new Set([...mandates.values()].filter(ids=>ids.length>1).flat());
+ const valid=rows.filter(r=>{if(!duplicates.has(r.memberId))return true;issues.push({id:r.memberId,name:r.memberName,errors:['Mandatsreferenz ist bei mehreren Mitgliedern in der Auswahl vergeben.']});return false;});
+ const lines=[SPARKASSE_COLUMNS.join(';'),...valid.map(r=>['SEPA',r.name,'',r.iban,'','',reviewDebitAmount(r.amountCents),r.purpose,r.mandate,dateDE(r.mandateDate)].map(csvCell).join(';'))],csv='\uFEFF'+lines.join('\r\n')+'\r\n';
+ return{year:String(to),from:String(from),to:String(to),purpose:combinedDebitPurpose(purpose,[to]).replace(new RegExp(' '+to+'$'),''),rows:valid,issues,skipped,totalCents:valid.reduce((sum,r)=>sum+r.amountCents,0),csv,filename:'Sparkasse_Nachholeinzug_'+from+'-'+to+'.csv',signature:JSON.stringify({csv,issues,skipped,states,includeFormer})};
+}
+const reviewDebitAmount=cents=>(cents/100).toFixed(2).replace('.',',');
+export function debitExportYears(record){return[...new Set(record.items.flatMap(item=>item.years??[record.year]))].sort();}
+export function overlappingDebitExports(records,report){
+ return records.filter(record=>record.status!=='cancelled'&&record.items.some(item=>report.rows.some(row=>row.memberId===item.memberId&&(item.years??[record.year]).some(y=>(row.years??[report.year]).includes(y)))));
+}
 export function prepareDebitExport({members,entries=[],year,purpose=DEFAULT_DEBIT_PURPOSE,selectedIds=null,includeFormer=false}){
  const finalPurpose=debitPurpose(purpose,year),rows=[],issues=[],skipped=[],references=new Set();
  const chosen=selectedIds?new Set(selectedIds):null;

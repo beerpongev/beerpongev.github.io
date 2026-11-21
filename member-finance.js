@@ -1,9 +1,9 @@
-import {showBankReceipts,showExportHistory,mountContributionReview} from './finance-tools.js';
+import {showBankReceipts,showExportHistory,mountContributionReview,mountCombinedDebitExport} from './finance-tools.js';
 import {annualFee} from './pricing.js';
 import {escapeHTML as e,localDate} from './ui.js';
 import {euro,fullName,nameKey,normalizeMember} from './registration.js';
 import {memberNumber,phoneNumber} from './member-format.js';
-import {DEFAULT_DEBIT_PURPOSE,prepareDebitExport,joinedDate,bankRisk} from './debit-export.js';
+import {DEFAULT_DEBIT_PURPOSE,prepareDebitExport,joinedDate,bankRisk,overlappingDebitExports} from './debit-export.js';
 import {contributionStates,contributionMethods,currentFeeYear,validYear,contributionFor,normalizeContribution,amountCents,readBankCSV,suggestBankColumns,bankRows,paymentSuggestions,bankKind} from './contributions.js';
 const statusTag=c=>`<span class="contribution-tag contribution-${c.status}">${e(contributionStates[c.status])}</span>`;
 const input=(label,name,value='',type='text',extra='')=>`<label>${label}<input name="${name}" type="${type}" value="${e(value)}" ${extra}></label>`;
@@ -37,6 +37,7 @@ export function createMemberFinance(ctx){
   const bankFilter=document.createElement('label');bankFilter.innerHTML='Bankverbindung<select id="member-bank-status"><option value="all">Alle Bankverbindungen</option><option value="unclear">IBAN / Bankverbindung unklar</option><option value="ok">Ohne Klärungshinweis</option></select>';target.querySelector('.member-filters').append(bankFilter);bankFilter.querySelector('select').onchange=()=>{selection.clear();paint();};
   const filter=new URL(location.href).searchParams.get('filter');if(filter==='bank')root.querySelector('#member-bank-status').value='unclear';if(filter==='action')root.querySelector('#member-payment').value='action';
   const reviewGeneration=generation;mountContributionReview(target,{api,members,work,active:()=>active(reviewGeneration)});
+  mountCombinedDebitExport(target.querySelector('.contribution-tools'),{api,work,active:()=>active(reviewGeneration),refresh:refreshExports});
   void refreshExports();
   target.querySelector('#bank-csv-file').onchange=loadCSV;if(billing)void watch();void refreshBankRisks().catch(error);
  }
@@ -72,7 +73,7 @@ export function createMemberFinance(ctx){
  async function downloadDebit(){
   if(!root||!allowed()||!debitPreview||exporting)return;exporting=true;const g=generation;try{await refreshBankRisks();if(!active(g))return;const options=debitOptions(),fresh=prepareDebitExport(options);if(fresh.csv!==debitPreview.csv||JSON.stringify(fresh.issues)!==JSON.stringify(debitPreview.issues)||JSON.stringify(options.selectedIds?.slice().sort()??null)!==debitPreview.selection)throw Error('Auswahl, Mitglieder oder Beiträge wurden geändert. Bitte die Sparkassen-CSV neu vorbereiten.');
    if(fresh.issues.length&&!root.querySelector('#debit-partial')?.checked)throw Error('Bitte bestätigen, dass die angezeigten unvollständigen Mitglieder nicht exportiert werden.');
-   const exports=await api().listDebitExports();const overlap=exports.filter(x=>x.year===fresh.year&&x.status!=='cancelled'&&x.items.some(item=>fresh.rows.some(row=>row.memberId===item.memberId)));if(overlap.length&&!confirm('Für mindestens ein ausgewähltes Mitglied gibt es bereits eine vorbereitete oder eingereichte Datei für dieses Jahr. Trotzdem eine weitere Datei erzeugen?'))return;
+   const exports=await api().listDebitExports();const overlap=overlappingDebitExports(exports,fresh);if(overlap.length&&!confirm('Für mindestens ein ausgewähltes Mitglied gibt es bereits eine vorbereitete oder eingereichte Datei für dieses Jahr. Trotzdem eine weitere Datei erzeugen?'))return;
    const exportId=await api().recordDebitExport(fresh);if(!active(g))return;
    const url=URL.createObjectURL(new Blob([fresh.csv],{type:'text/csv;charset=utf-8'})),link=document.createElement('a');link.href=url;link.download=fresh.filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);ctx.toast('Lastschriftdatei und Exportnachweis '+exportId+' erstellt. Den Bankauftrag anschließend bei der Bank prüfen.');await refreshExports();
   }catch(err){error(err);}finally{exporting=false;}

@@ -207,7 +207,12 @@ export function createClubStore(environment){
  async function listDebitExports(){const {api,db}=await board();return(await rows(api,db,'debitExports')).sort((a,b)=>(b.createdAt?.seconds??0)-(a.createdAt?.seconds??0));}
  async function recordDebitExport(report){
   const {api,db,auth}=await board();if(!validYear(report.year)||!report.rows?.length||report.rows.length>2000)throw Error('Ungültige Lastschriftauswahl.');
-  const id=crypto.randomUUID(),items=report.rows.map(r=>({memberId:r.memberId,name:r.memberName,amountCents:r.amountCents,mandate:r.mandate,mandateDate:r.mandateDate}));
+  if(report.rows.reduce((sum,r)=>sum+r.amountCents,0)!==report.totalCents||new Set(report.rows.map(r=>r.memberId)).size!==report.rows.length)throw Error('Exportbetrag oder Mitgliedsauswahl ist nicht eindeutig.');
+  const id=crypto.randomUUID(),items=report.rows.map(r=>{
+   const item={memberId:r.memberId,name:r.memberName,amountCents:r.amountCents,mandate:r.mandate,mandateDate:r.mandateDate};
+   if(r.allocations){const years=r.allocations.map(a=>a.year);if(!years.length||years.length>31||years.some(y=>!validYear(y))||new Set(years).size!==years.length||JSON.stringify(years)!==JSON.stringify(r.years)||r.allocations.some(a=>!Number.isSafeInteger(a.amountCents)||a.amountCents<=0)||r.allocations.reduce((n,a)=>n+a.amountCents,0)!==r.amountCents||typeof r.purpose!=='string'||r.purpose.length>140)throw Error('Ungültige Aufteilung auf Beitragsjahre.');Object.assign(item,{years,allocations:r.allocations.map(a=>({year:a.year,amountCents:a.amountCents})),purpose:r.purpose});}
+   return item;
+  });
   await api.setDoc(api.doc(db,'debitExports',id),{year:report.year,purpose:report.purpose,totalCents:report.totalCents,items,status:'prepared',revision:0,createdBy:auth.currentUser.uid,createdAt:api.serverTimestamp(),updatedAt:api.serverTimestamp()});return id;
  }
  async function setDebitExportStatus(id,status,expectedRevision){

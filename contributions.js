@@ -48,13 +48,20 @@ export function readContributionReview(text){
  if(!table.length||table[0].length!==REVIEW_COLUMNS.length||table[0].some((h,i)=>h!==REVIEW_COLUMNS[i]))throw Error('Bitte die exportierte Beitrags-Prüfdatei mit unveränderten Spalten hochladen.');
  if(table.length>10001)throw Error('Höchstens 10.000 Beitragszeilen pro Datei.');
  const seen=new Set();let duplicate=false;const parsed=table.slice(1).map((values,index)=>{
-  const line=index+2;try{
+  const line=index+2;let identity={};try{
    const v=values.map(decode);if(v.length!==REVIEW_COLUMNS.length)throw Error('Spaltenzahl stimmt nicht.');
    const snapshot=JSON.parse(v[17]),key=v[1]+'/'+v[5];if(v[0]!=='beerpong-contributions-v1'||snapshot.memberId!==v[1]||snapshot.year!==v[5]||!validYear(v[5])||!Number.isInteger(snapshot.revision)||snapshot.revision< -1||!Array.isArray(snapshot.member)||snapshot.member.length!==7)throw Error('Prüfstand oder Kennung ungültig.');
    if(seen.has(key)){duplicate=true;throw Error('Mitglied und Jahr sind doppelt enthalten.');}seen.add(key);
    const before=normalizeContribution(snapshot.contribution),m={id:v[1],number:snapshot.member[0],firstName:snapshot.member[1],lastName:snapshot.member[2]};
+   identity={memberId:m.id,year:v[5],name:m.firstName+' '+m.lastName};
    const originals=reviewOriginal(m,{...before,year:v[5],value:v[10],color:v[11]});
-   if(v.slice(0,12).some((cell,i)=>cell!==String(originals[i]??'')))throw Error('Originalspalten bitte unverändert lassen.');
+   for(let i=0;i<12;i++){
+    const expected=String(originals[i]??'');if(v[i]===expected)continue;
+    if([7,8,9].includes(i)&&amountCents(v[i])!==null&&amountCents(v[i])===amountCents(expected))continue;
+    if(i===2&&/^\d+(?:[.,]0+)?$/.test(v[i])&&/^\d+(?:[.,]0+)?$/.test(expected)&&Number(v[i].replace(',','.'))===Number(expected.replace(',','.')))continue;
+    const editable=i===6?'Neuer Status':i===8?'Bezahlt EUR':'';
+    throw Error('Die Originalspalte „'+REVIEW_COLUMNS[i]+'“ wurde inhaltlich geändert.'+(editable?' Bitte die Änderung unter „'+editable+'“ eintragen.':' Bitte diese Spalte unverändert lassen.'));
+   }
    const action=v[12].trim(),edits=v.slice(13,17).some(s=>s.trim());if(!action&&!edits)return{line,memberId:v[1],year:v[5],skip:true};
    const status=Object.keys(contributionStates).find(k=>nameKey(k)===nameKey(action)||nameKey(contributionStates[k])===nameKey(action));if(!status)throw Error('Neuer Status: Bezahlt, Offen, Prüfen, Rücklastschrift, Einzug vorgemerkt, Beitragsfrei oder Nicht fällig eintragen.');
    const zero=['waived','notdue'].includes(status),paid=v[13].trim()?amountCents(v[13]):zero?0:status==='paid'?Math.max(before.dueCents,before.paidCents):before.paidCents;
@@ -65,7 +72,7 @@ export function readContributionReview(text){
    const extra=v[16].trim(),note=extra?[before.note,extra].filter(Boolean).join('\n'):before.note;if(note.length>1000)throw Error('Die kombinierte Notiz ist länger als 1000 Zeichen.');
    const desired=normalizeContribution({...before,status,paidCents:paid,dueCents:zero?0:before.dueCents,date,method,note});
    return{line,memberId:v[1],year:v[5],name:m.firstName+' '+m.lastName,snapshot:v[17],desired};
-  }catch(error){return{line,error:'Zeile '+line+': '+error.message};}
+  }catch(error){return{line,...identity,error:error.message};}
  });if(duplicate)throw Error('Mitglied und Beitragsjahr sind doppelt enthalten. Bitte die Dubletten in der Datei entfernen.');return parsed;
 }
 export function planContributionReview(rows,members,byYear){
