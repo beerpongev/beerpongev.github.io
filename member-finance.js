@@ -1,4 +1,4 @@
-import {showBankReceipts,showExportHistory} from './finance-tools.js';
+import {showBankReceipts,showExportHistory,mountContributionReview} from './finance-tools.js';
 import {annualFee} from './pricing.js';
 import {escapeHTML as e,localDate} from './ui.js';
 import {euro,fullName,nameKey,normalizeMember} from './registration.js';
@@ -36,6 +36,7 @@ export function createMemberFinance(ctx){
   target.querySelector('.contribution-tools hr').before(debit);debit.querySelector('#debit-prepare').onclick=prepareDebit;debit.querySelector('#debit-purpose').oninput=()=>{debitPreview=null;debit.querySelector('#debit-preview').replaceChildren();};
   const bankFilter=document.createElement('label');bankFilter.innerHTML='Bankverbindung<select id="member-bank-status"><option value="all">Alle Bankverbindungen</option><option value="unclear">IBAN / Bankverbindung unklar</option><option value="ok">Ohne Klärungshinweis</option></select>';target.querySelector('.member-filters').append(bankFilter);bankFilter.querySelector('select').onchange=()=>{selection.clear();paint();};
   const filter=new URL(location.href).searchParams.get('filter');if(filter==='bank')root.querySelector('#member-bank-status').value='unclear';if(filter==='action')root.querySelector('#member-payment').value='action';
+  const reviewGeneration=generation;mountContributionReview(target,{api,members,work,active:()=>active(reviewGeneration)});
   void refreshExports();
   target.querySelector('#bank-csv-file').onchange=loadCSV;if(billing)void watch();void refreshBankRisks().catch(error);
  }

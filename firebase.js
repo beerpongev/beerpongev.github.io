@@ -3,7 +3,7 @@ import {normalizePrices} from './pricing.js';
 import { firebaseConfig, tournamentId, useEmulators, appCheckSiteKey } from './config.js';
 import { runStateTransaction } from './transaction.js';
 import {memberInvitationPlan,defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact} from './registration.js';
-import {validYear,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
+import {contributionReviewSnapshot,contributionFor,validYear,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
 
 export const firebaseProjectId=firebaseConfig.projectId;
@@ -263,6 +263,18 @@ export async function listContributions(year){await requireBoardAccount();if(!va
 export async function listMembers(){await requireBoardAccount();const snapshot=await api.getDocs(api.collection(db,'members'));return snapshot.docs.map(d=>({id:d.id,...d.data()}));}
 function contributionRef(memberId,year){if(!validYear(year)||!/^[a-zA-Z0-9_-]{1,128}$/.test(memberId))throw Error('Ungültige Mitglieds-ID oder Beitragsjahr.');return api.doc(db,'memberContributions',String(year),'entries',memberId);}
 export async function watchContributions(year,onRows,onError){await requireBoardAccount();if(!validYear(year))throw Error('Ungültiges Beitragsjahr.');return api.onSnapshot(api.collection(db,'memberContributions',String(year),'entries'),s=>onRows(s.docs.map(d=>({id:d.id,...d.data()}))),onError);}
+/** CSV-Abgleich prüft Mitglied und Jahresstand zusammen innerhalb der Transaktion. */
+export async function saveReviewedContribution(memberId,year,input,snapshot){
+ await requireBoardAccount();if(!validYear(year)||!/^[a-zA-Z0-9_-]{1,128}$/.test(memberId)||typeof snapshot!=='string'||snapshot.length>10000)throw Error('Ungültiger Beitrags-Prüfstand.');
+ const ref=api.doc(db,'memberContributions',String(year),'entries',memberId),desired=normalizeContribution(input);
+ return api.runTransaction(db,async tx=>{
+  const [member,old]=await Promise.all([tx.get(api.doc(db,'members',memberId)),tx.get(ref)]);if(!member.exists())throw Error('Mitglied nicht mehr vorhanden.');
+  const m={id:memberId,...member.data()},current=contributionFor(m,String(year),old.exists()?[{...old.data(),memberId}]:[]);
+  if(JSON.stringify(normalizeContribution(current))===JSON.stringify(desired))return{already:true};
+  if(contributionReviewSnapshot(m,current)!==snapshot)throw Error('Beitrag oder Mitglied wurde inzwischen geändert. Bitte neu exportieren und prüfen.');
+  tx.set(ref,{...desired,memberId,year:String(year),revision:(old.data()?.revision??-1)+1,updatedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});return{already:false};
+ });
+}
 export async function saveContribution(memberId,year,input,expectedRevision){
  await requireBoardAccount();const ref=contributionRef(memberId,year),data=normalizeContribution(input);
  await api.runTransaction(db,async tx=>{const [member,old]=await Promise.all([tx.get(api.doc(db,'members',memberId)),tx.get(ref)]);if(!member.exists())throw Error('Mitglied nicht mehr vorhanden.');if((old.data()?.revision??-1)!==expectedRevision)throw Error('Der Beitrag wurde inzwischen geändert. Bitte neu öffnen.');tx.set(ref,{...data,memberId,year:String(year),revision:(old.data()?.revision??-1)+1,updatedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});});

@@ -23,6 +23,58 @@ export function legacyContribution(member,year){
  return{memberId:member.id,year:String(year),dueCents:['notdue','waived'].includes(status)?0:fee,paidCents:status==='paid'?Math.max(fee,amount??0):0,status,method:has?'excel':'manual',date:'',note:has?`Excel: ${value||'leer'}${color?' · '+color:''}`:'',revision:-1,legacy:has,value,color};
 }
 export function contributionFor(member,year,entries=[]){return entries.find(r=>r.memberId===member.id)??legacyContribution(member,year);}
+export const REVIEW_COLUMNS=['Format','Mitglied-ID','Mitgliedsnummer','Vorname','Nachname','Beitragsjahr','Status bisher','Soll EUR','Bezahlt bisher EUR','Offen EUR','Excel-Original','Excel-Farbe','Neuer Status','Bezahlt EUR','Zahlungsdatum','Zahlungsart','Neue Notiz','Pruefstand'];
+const reviewAmount=cents=>(cents/100).toFixed(2).replace('.',',');
+const reviewSafe=value=>/^[=+\-@'\t\r]/.test(String(value??''))?"'"+value:String(value??'');
+const reviewCell=value=>'"'+reviewSafe(value).replace(/"/g,'""')+'"';
+export function contributionReviewSnapshot(member,c){
+ return JSON.stringify({memberId:member.id,year:c.year,revision:c.revision,member:[member.number,member.firstName,member.lastName,member.active,member.joined,member.feeHistory?.[c.year]??'',member.feeColors?.[c.year]??''],contribution:normalizeContribution(c)});
+}
+function reviewOriginal(member,c){return['beerpong-contributions-v1',member.id,member.number,member.firstName,member.lastName,c.year,contributionStates[c.status],reviewAmount(c.dueCents),reviewAmount(c.paidCents),reviewAmount(Math.max(0,c.dueCents-c.paidCents)),c.value??'',c.color??''];}
+/** Private Arbeitsdatei: kein Bankauftrag, keine Bank- oder Kontaktdaten. */
+export function exportContributionReview(members,byYear,{from,to}){
+ if(!validYear(from)||!validYear(to)||+from>+to||+to-+from>30)throw Error('Bitte einen Zeitraum von höchstens 31 Beitragsjahren wählen.');
+ const lines=[REVIEW_COLUMNS.map(reviewCell).join(';')];let count=0;
+ for(let y=+from;y<=+to;y++)for(const m of members.slice().sort((a,b)=>a.firstName.localeCompare(b.firstName,'de')||a.lastName.localeCompare(b.lastName,'de'))){
+  const c=contributionFor(m,String(y),byYear[String(y)]??[]),documented=c.revision>=0||Object.hasOwn(m.feeHistory??{},y)||Object.hasOwn(m.feeColors??{},y);
+  if(!documented&&!joinedDate(m.joined))continue;
+  if(!['open','review','returned','pending'].includes(c.status)||c.dueCents<=c.paidCents)continue;
+  lines.push([...reviewOriginal(m,c),'','','','','',contributionReviewSnapshot(m,c)].map(reviewCell).join(';'));count++;
+ }
+ return{csv:'\uFEFF'+lines.join('\r\n')+'\r\n',count,filename:'BEITRAEGE-PRUEFEN-'+from+'-'+to+'.csv'};
+}
+export function readContributionReview(text){
+ const table=String(text).includes(';')?parseCSV(text,';'):parseCSV(text,','),decode=v=>v.startsWith("'")?v.slice(1):v;
+ if(!table.length||table[0].length!==REVIEW_COLUMNS.length||table[0].some((h,i)=>h!==REVIEW_COLUMNS[i]))throw Error('Bitte die exportierte Beitrags-Prüfdatei mit unveränderten Spalten hochladen.');
+ if(table.length>10001)throw Error('Höchstens 10.000 Beitragszeilen pro Datei.');
+ const seen=new Set();let duplicate=false;const parsed=table.slice(1).map((values,index)=>{
+  const line=index+2;try{
+   const v=values.map(decode);if(v.length!==REVIEW_COLUMNS.length)throw Error('Spaltenzahl stimmt nicht.');
+   const snapshot=JSON.parse(v[17]),key=v[1]+'/'+v[5];if(v[0]!=='beerpong-contributions-v1'||snapshot.memberId!==v[1]||snapshot.year!==v[5]||!validYear(v[5])||!Number.isInteger(snapshot.revision)||snapshot.revision< -1||!Array.isArray(snapshot.member)||snapshot.member.length!==7)throw Error('Prüfstand oder Kennung ungültig.');
+   if(seen.has(key)){duplicate=true;throw Error('Mitglied und Jahr sind doppelt enthalten.');}seen.add(key);
+   const before=normalizeContribution(snapshot.contribution),m={id:v[1],number:snapshot.member[0],firstName:snapshot.member[1],lastName:snapshot.member[2]};
+   const originals=reviewOriginal(m,{...before,year:v[5],value:v[10],color:v[11]});
+   if(v.slice(0,12).some((cell,i)=>cell!==String(originals[i]??'')))throw Error('Originalspalten bitte unverändert lassen.');
+   const action=v[12].trim(),edits=v.slice(13,17).some(s=>s.trim());if(!action&&!edits)return{line,memberId:v[1],year:v[5],skip:true};
+   const status=Object.keys(contributionStates).find(k=>nameKey(k)===nameKey(action)||nameKey(contributionStates[k])===nameKey(action));if(!status)throw Error('Neuer Status: Bezahlt, Offen, Prüfen, Rücklastschrift, Einzug vorgemerkt, Beitragsfrei oder Nicht fällig eintragen.');
+   const zero=['waived','notdue'].includes(status),paid=v[13].trim()?amountCents(v[13]):zero?0:status==='paid'?Math.max(before.dueCents,before.paidCents):before.paidCents;
+   if(paid===null)throw Error('Bezahlt EUR ist kein gültiger Betrag.');
+   const date=v[14].trim()?bankDate(v[14]):before.date;if(date===null)throw Error('Zahlungsdatum nicht erkannt.');
+   const method=v[15].trim()?Object.keys(contributionMethods).find(k=>nameKey(k)===nameKey(v[15])||nameKey(contributionMethods[k])===nameKey(v[15])):'manual';
+   if(!method)throw Error('Zahlungsart: Manuell, Lastschrift, Überweisung, Bar oder Excel-Übernahme.');
+   const extra=v[16].trim(),note=extra?[before.note,extra].filter(Boolean).join('\n'):before.note;if(note.length>1000)throw Error('Die kombinierte Notiz ist länger als 1000 Zeichen.');
+   const desired=normalizeContribution({...before,status,paidCents:paid,dueCents:zero?0:before.dueCents,date,method,note});
+   return{line,memberId:v[1],year:v[5],name:m.firstName+' '+m.lastName,snapshot:v[17],desired};
+  }catch(error){return{line,error:'Zeile '+line+': '+error.message};}
+ });if(duplicate)throw Error('Mitglied und Beitragsjahr sind doppelt enthalten. Bitte die Dubletten in der Datei entfernen.');return parsed;
+}
+export function planContributionReview(rows,members,byYear){
+ return rows.map(row=>{if(row.error||row.skip)return row;const member=members.find(m=>m.id===row.memberId);if(!member)return{...row,error:'Mitglied nicht mehr vorhanden.'};
+  const current=contributionFor(member,row.year,byYear[row.year]??[]);
+  if(JSON.stringify(normalizeContribution(current))===JSON.stringify(row.desired))return{...row,already:true};
+  return contributionReviewSnapshot(member,current)===row.snapshot?{...row,before:current}:{...row,error:'Zwischenzeitlich geändert. Bitte aktuellen Stand neu exportieren und prüfen.'};
+ });
+}
 export function normalizeContribution(input){
  const dueCents=Number(input.dueCents),paidCents=Number(input.paidCents),status=String(input.status),method=String(input.method??'manual'),date=String(input.date??'');
  if(!Number.isInteger(dueCents)||dueCents<0||dueCents>100000||!Number.isInteger(paidCents)||paidCents<0||paidCents>100000||!Object.hasOwn(contributionStates,status)||!Object.hasOwn(contributionMethods,method))throw Error('Beitragsdaten sind ungültig.');

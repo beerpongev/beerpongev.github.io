@@ -1,7 +1,7 @@
 // Ausschließlich erfundene Beispieldaten im Arbeitsspeicher, keine echte Ablage.
 import {reverseBankPayment} from './bank-corrections.js';
 import {defaultRegistrationSettings,normalizeMember,normalizeRegistration,reconcileSettings,validatePrivateImport,applicationMember,memberProfile,normalizeContact} from './registration.js';
-import {normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
+import {contributionReviewSnapshot,contributionFor,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
 export function createDemoRegistry(){
  const contributions=new Map(),transactions=new Map(),listeners=new Set(),persons=new Map(),publicPlayers=new Map(),participations=new Map(),corrections=new Map(),debitExports=new Map();let clubSettings={};let sportArchives=[];
@@ -23,6 +23,7 @@ export function createDemoRegistry(){
   linkMemberPerson:async(memberId,personId)=>{const m=members.get(memberId),p=persons.get(personId);if(!m||!p)throw Error('Mitglied oder Person fehlt.');m.personId=personId;p.memberId=memberId;},
   listContributions:async year=>copy([...contributions.values()].filter(c=>c.year===String(year))),
   getClubSettings:()=>copy(clubSettings),
+  saveReviewedContribution:async(memberId,year,input,snapshot)=>{const member=members.get(memberId);if(!member)throw Error('Mitglied nicht mehr vorhanden.');const current=contributionFor(member,String(year),await api.listContributions(year)),desired=normalizeContribution(input);if(JSON.stringify(normalizeContribution(current))===JSON.stringify(desired))return{already:true};if(contributionReviewSnapshot(member,current)!==snapshot)throw Error('Beitrag oder Mitglied wurde inzwischen geändert. Bitte neu prüfen.');await api.saveContribution(memberId,year,desired,current.revision);return{already:false};},
   savePerson:async(id,p)=>persons.set(id,copy({...p,id})),
   saveClubSettings:async(value,{expectedRevision}={})=>{const revision=clubSettings.revision??-1;if(expectedRevision!==undefined&&expectedRevision!==revision)throw Error('Vereinsangaben wurden geändert.');clubSettings=copy({...value,revision:revision+1});return copy(clubSettings);},
   listDebitExports:async()=>copy([...debitExports.values()]),
