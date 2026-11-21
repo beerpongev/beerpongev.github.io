@@ -69,7 +69,7 @@ export function membershipReviewSignature(person,members){
 }
 export function needsMembershipReview(person,members){
  if(!person.verified)return true;
- if(person.member&&person.memberId)return !members.some(m=>m.id===person.memberId&&m.active);
+ if(person.member)return !person.memberId||!members.some(m=>m.id===person.memberId&&m.active);
  return membershipReviewSignature(person,members)!==(person.membershipFingerprint??'');
 }
 export function reconcileSettings(settings,before,after){

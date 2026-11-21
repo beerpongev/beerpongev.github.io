@@ -1,8 +1,8 @@
 /** Abgleich vorhandener App-Konten; Login-Adresse und Mitgliedskontakt bleiben getrennt. */
 export function resolvePlayerAccount(person,{directory=null,members=[],identities=[]}={}){
  if(!Array.isArray(directory))return{key:'loading'};
- const email=String(person.email??'').trim().toLowerCase(),identity=identities.find(p=>p.id===person.personId)||identities.find(p=>email&&p.email?.toLowerCase()===email),member=members.find(m=>m.id===person.memberId),uid=identity?.accountUid||member?.accountUid;
- const byEmail=directory.filter(u=>email&&u.email?.trim().toLowerCase()===email),linked=uid?directory.find(u=>u.uid===uid):null;
+ const email=String(person.email??'').trim().toLowerCase(),identity=identities.find(p=>p.id===person.personId)||identities.find(p=>email&&p.email?.toLowerCase()===email),member=person.verified&&person.member?members.find(m=>m.id===person.memberId&&m.active):undefined,uid=identity?.accountUid||member?.accountUid;
+ const emails=new Set([email,member?.email?.trim().toLowerCase()].filter(Boolean)),byEmail=directory.filter(u=>emails.has(u.email?.trim().toLowerCase())),linked=uid?directory.find(u=>u.uid===uid):null;
  if(byEmail.length>1||uid&&(!linked||byEmail.some(u=>u.uid!==uid)))return{key:'review',detail:'Kontoverknüpfung widersprüchlich oder Konto fehlt. Bitte Benutzerzuordnung prüfen.'};
  const account=linked||byEmail[0];if(account?.disabled)return{key:'review',detail:'Konto gesperrt / Kontobereinigung offen.'};
  return account?{key:'existing',account,member}:{key:'missing',member};

@@ -22,7 +22,7 @@ async function requireBoardAccount(){
 }
 
 /** Die Online-Demo verwendet Firebase nur für Anmeldung und Prüfung der eigenen Rolle. */
-export async function connect({ onState, onUser, onRole, onUsers, onConnection, onError, onCatalog, onRegistrationSettings, initialTournamentId=tournamentId, demoGate=false }) {
+export async function connect({ onState, onUser, onRole, onUsers, onConnection, onError, onCatalog, onRegistrationSettings, onAccessPending, initialTournamentId=tournamentId, demoGate=false }) {
   demoGateOnly=demoGate;
   const version = '12.6.0';
   [apps, authApi, api] = await Promise.all([
@@ -51,12 +51,12 @@ export async function connect({ onState, onUser, onRole, onUsers, onConnection, 
   let stopRole = () => {}, stopUsers = () => {};
   authApi.onAuthStateChanged(auth, user => {
     let userLoginRecorded=false;
-    historyApproved=false;stopRole(); stopUsers(); onUsers([]); onRole('guest',''); onUser(user);
-    if (!user) return;
+    historyApproved=false;onAccessPending?.(true);stopRole(); stopUsers(); onUsers([]); onRole('guest',''); onUser(user);
+    if (!user){onAccessPending?.(false);return;}
     stopRole = api.onSnapshot(api.doc(db, 'roles', user.uid), snap => {
       const role = snap.data()?.disabled?'guest':snap.data()?.role ?? 'guest';
       historyApproved=!!user&&!user.isAnonymous&&snap.exists()&&!snap.data()?.disabled&&['guest','player','admin','board'].includes(role);
-      onRole(role,snap.data()?.teamId??'',snap.data()?.tournamentId??tournamentId); stopUsers();onUsers([]);
+      onRole(role,snap.data()?.teamId??'',snap.data()?.tournamentId??tournamentId); stopUsers();onUsers([]);onAccessPending?.(false);
       if(!demoGate&&historyApproved&&user.isAnonymous===false&&!userLoginRecorded){userLoginRecorded=true;void recordOwnAppLogin().catch(onError);}
       if (!demoGate&&role==='board'){
        let directory=[],activity=new Map();const emit=()=>onUsers(directory.map(u=>({...u,lastAppLoginAt:activity.get(u.uid)??null})));
@@ -64,7 +64,7 @@ export async function connect({ onState, onUser, onRole, onUsers, onConnection, 
        const stopActivity=api.onSnapshot(api.collection(db,'accountActivity'),list=>{activity=new Map(list.docs.map(d=>[d.id,d.data().lastLoginAt]));emit();},onError);
        stopUsers=()=>{stopDirectory();stopActivity();};
       }
-    }, onError);
+    }, error=>{onAccessPending?.(false);onError(error);});
   });
 }
 

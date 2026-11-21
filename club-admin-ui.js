@@ -32,7 +32,7 @@ export function createClubAdministration(ctx){
      ['members','bank',members.filter(m=>m.bankStatus==='unclear').length,'Bankverbindung klären'],
      ['members','action',members.filter(m=>m.active&&['open','review','returned'].includes(contributionFor(m,year,contributions).status)).length,`Jahresbeiträge ${year} offen / prüfen`]
     ];
-    root.querySelector('#board-tasks').innerHTML=`<div class="board-task-grid">${tasks.map(([view,filter,count,label])=>`<a class="board-task ${count?'has-work':''}" href="?bereich=${view==='registrations'?'anmeldungen-verwalten':view==='applications'?'antraege':'mitglieder-verwalten'}&turnier=${encodeURIComponent(ctx.tournamentId())}&filter=${filter}"><b>${count}</b><span>${e(label)}</span></a>`).join('')}</div><p class="legend">Die Zähler berücksichtigen bestätigte Jahresbuchungen. Details und Prüffilter öffnen den jeweiligen Verwaltungsbereich.</p>`;
+    root.querySelector('#board-tasks').innerHTML=`<div class="board-task-grid">${tasks.map(([view,filter,count,label])=>`<a class="board-task ${count?'has-work':''}" ${view==='applications'?'data-view="applications"':''} href="?bereich=${view==='registrations'?'anmeldungen-verwalten':view==='applications'?'antraege':'mitglieder-verwalten'}&turnier=${encodeURIComponent(ctx.tournamentId())}&filter=${filter}"><b>${count}</b><span>${e(label)}</span></a>`).join('')}</div><p class="legend">Die Zähler berücksichtigen bestätigte Jahresbuchungen. Details und Prüffilter öffnen den jeweiligen Verwaltungsbereich.</p>`;
    }catch(err){if(allowed(root,g))error(root,err);}
   };
   root.querySelector('#tasks-reload').onclick=()=>void refresh();void refresh();
