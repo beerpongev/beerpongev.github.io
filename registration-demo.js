@@ -42,7 +42,7 @@ export function createDemoRegistry(){
   saveRegistration:async(id,input,{entryId,status='confirmed',source='board',sourceDate='',contactEmailUpdates=[]}={})=>{
    const s=getEvent(id),rows=entries.get(id),old=rows.find(r=>r.id===entryId),key=entryId??crypto.randomUUID();
    for(const update of contactEmailUpdates){const member=members.get(update.memberId),person=input.players.find(p=>p.memberId===update.memberId&&p.verified&&p.member);if(!member||!person||member.email!==update.expectedEmail)throw Error('Kontaktadresse wurde geändert. Bitte neu prüfen.');}
-   const row={...normalizeRegistration({...input,prices:input.prices??s.prices},{board:true,allowMissingEmail:true}),id:key,status,sequence:old?.sequence??s.nextSequence+1,source:old?.source??source,sourceDate:old?.sourceDate??sourceDate};
+   const row={...normalizeRegistration({...input,prices:input.prices??s.prices},{board:true,allowMissingEmail:true}),id:key,status,sequence:old?.sequence??s.nextSequence+1,source:old?.source??source,sourceDate:old?.sourceDate??sourceDate,createdAt:old?.createdAt??Date.now(),updatedAt:Date.now()};
    const settings=reconcileSettings(s,old,row);for(const update of contactEmailUpdates)members.get(update.memberId).email=input.players.find(p=>p.memberId===update.memberId).email;
    events.set(id,settings);if(old)Object.assign(old,row);else rows.push(row);return copy(row);
   },
