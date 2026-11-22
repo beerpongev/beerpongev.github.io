@@ -48,7 +48,16 @@ export function normalizeContact(data){
  const values=Object.fromEntries(contactFields.map(k=>[k,text(data[k],{email:254,phone:80,street:120,postalCode:20,city:100,occupation:120}[k])]));values.email=values.email.toLowerCase();
  need(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email),'Bitte eine gültige Kontakt-E-Mail eingeben.');need(values.phone,'Bitte eine Telefonnummer eingeben.');return values;
 }
-export function memberProfile(member,revision=0){const m=normalizeMember(member);return{memberId:member.id,number:m.number,firstName:m.firstName,lastName:m.lastName,birthDate:m.birthDate,active:m.active,...Object.fromEntries(contactFields.map(k=>[k,m[k]])),revision};}
+export const profileFields=['firstName','lastName','birthDate',...contactFields,'iban','bank','accountHolder'];
+export function profileValues(data){return Object.fromEntries(profileFields.map(k=>[k,String(data[k]??'')]));}
+export function normalizeProfileChange(data){
+ const member=normalizeMember(data),values={...profileValues(member),...normalizeContact(data)};
+ values.iban=values.iban.replace(/\s/g,'').toUpperCase();
+ need(!values.birthDate||validDate(values.birthDate),'Bitte ein gültiges Geburtsdatum eingeben.');
+ if(values.iban){let rest=0;need(/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(values.iban),'Bitte eine gültige IBAN eingeben.');for(const c of values.iban.slice(4)+values.iban.slice(0,4))for(const digit of (/[A-Z]/.test(c)?String(c.charCodeAt(0)-55):c))rest=(rest*10+Number(digit))%97;need(rest===1,'Die IBAN-Prüfziffer stimmt nicht.');}
+ return values;
+}
+export function memberProfile(member,revision=0){const m=normalizeMember(member);return{memberId:member.id,number:m.number,active:m.active,...profileValues(m),revision};}
 export function normalizeApplication(data){
  const keys=['firstName','lastName','birthDate','occupation','street','postalCode','city','email','phone','applicationPlace','applicationDate','accountHolder','bank','iban','debitPlace','debitDate'];
  const result=Object.fromEntries(keys.map(k=>[k,text(data[k],{email:254,phone:80,firstName:60,lastName:60,postalCode:20,birthDate:10,applicationDate:10,debitDate:10,iban:80}[k]??120)]));

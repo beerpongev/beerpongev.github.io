@@ -2,7 +2,7 @@ import {createClubStore} from './club-store.js';
 import {normalizePrices} from './pricing.js';
 import { firebaseConfig, tournamentId, useEmulators, appCheckSiteKey } from './config.js';
 import { runStateTransaction } from './transaction.js';
-import {memberInvitationPlan,defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact} from './registration.js';
+import {memberInvitationPlan,defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact,profileValues,normalizeProfileChange} from './registration.js';
 import {contributionReviewSnapshot,contributionFor,validYear,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
 
@@ -316,21 +316,57 @@ export async function saveMember(id,input,{expectedUpdatedAt}={}){
   tx.set(ref,{...member,updatedAt:api.serverTimestamp()});if(profileRef)tx.set(profileRef,{...memberProfile({id:key,...member},(profile?.data()?.revision??-1)+1),updatedAt:api.serverTimestamp()});
  });return key;
 }
-/** Aufnahme erfolgt ausschließlich nach Vorstandsentscheidung, atomar und einmalig. */
-export async function acceptMembership(id,{data,memberId,number,joined,expectedUpdatedAt}={}){
- await requireBoardAccount();const target=memberId||'application-'+id,seed=!memberId?mandateSequence(await listMembers()):null;
+/** Fehlerhafte Verzeichniseinträge entfernen; Konten, Sport- und Finanznachweise bleiben erhalten. */
+export async function deleteMember(id,{expectedUpdatedAt}={}){
+ await requireBoardAccount();if(typeof id!=='string'||!id||id.length>128||id.includes('/'))throw Error('Ungültige Mitglieds-ID.');
+ const filter=async(collection,field,value)=>{const s=await api.getDocs(api.query(api.collection(db,collection),api.where(field,'==',value)));return s.docs.map(d=>({path:[collection,d.id],data:d.data()}));};
+ const [profiles,changes,persons,events,allMembers]=await Promise.all([filter('memberProfiles','memberId',id),filter('memberProfileChanges','memberId',id),filter('persons','memberId',id),api.getDocs(api.collection(db,'registrationEvents')),listMembers()]);
+ const registrations=(await Promise.all(events.docs.map(async event=>{const s=await api.getDocs(api.collection(db,'tournamentRegistrations',event.id,'entries'));return s.docs.filter(d=>d.data().players?.some(p=>p.memberId===id)).map(d=>({path:['tournamentRegistrations',event.id,'entries',d.id]}));}))).flat();
+ const bindings=[...profiles.map(r=>({...r,kind:'private'})),...changes.map(r=>({...r,kind:'private'})),...persons.map(r=>({...r,kind:'person'})),...registrations.map(r=>({...r,kind:'registration'}))];
+ if(bindings.length>400)throw Error('Zu viele Verknüpfungen für eine einzelne Löschung. Bitte die Zuordnungen zuerst getrennt bereinigen.');
  return api.runTransaction(db,async tx=>{
+  const ref=api.doc(db,'members',id),counterRef=api.doc(db,'mandateCounters','global');
+  const [member,counter,snapshots]=await Promise.all([tx.get(ref),tx.get(counterRef),Promise.all(bindings.map(r=>tx.get(api.doc(db,...r.path))))]);
+  if(!member.exists())return{already:true,registrations:0};
+  if(expectedUpdatedAt!==undefined&&(member.data().updatedAt?.toMillis?.()??null)!==expectedUpdatedAt)throw Error('Das Mitglied wurde inzwischen geändert. Bitte neu öffnen und prüfen.');
+  let count=0;
+  for(const [i,binding]of bindings.entries()){
+   const s=snapshots[i],data=s.data();if(!s.exists())continue;const target=api.doc(db,...binding.path);
+   if(binding.kind==='private'&&data.memberId===id)tx.delete(target);
+   if(binding.kind==='person'&&data.memberId===id)tx.update(target,{memberId:'',updatedAt:api.serverTimestamp()});
+   if(binding.kind==='registration'&&data.players.some(p=>p.memberId===id)){
+    tx.update(target,{players:data.players.map(p=>p.memberId===id?{...p,memberId:'',verified:false,membershipFingerprint:''}:p),updatedAt:api.serverTimestamp()});count++;
+   }
+  }
+  const high=Math.max(mandateSequence(allMembers),mandateSequence([normalizeMember(member.data())]));
+  if(high>=120&&high>(counter.data()?.lastNumber??0))tx.set(counterRef,{lastNumber:high,updatedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});
+  tx.delete(ref);return{already:false,registrations:count};
+ });
+}
+/** Aufnahme erfolgt ausschließlich nach Vorstandsentscheidung, atomar und einmalig. */
+export async function acceptMembership(id,{data,memberId,number,joined,expectedUpdatedAt,accountUid}={}){
+ await requireBoardAccount();const target=memberId||'application-'+id,seed=!memberId?mandateSequence(await listMembers()):null;
+ const result=await api.runTransaction(db,async tx=>{
   const [application,review,old]=await Promise.all([tx.get(api.doc(db,'membershipApplications',id)),tx.get(api.doc(db,'membershipReviews',id)),tx.get(api.doc(db,'members',target))]);
   if(!application.exists())throw Error('Der Antrag ist nicht mehr vorhanden.');if(review.exists())throw Error('Dieser Antrag wurde bereits bearbeitet.');
   if(!memberId&&old.exists())throw Error('Der Mitgliedsdatensatz existiert bereits. Bitte zuordnen.');
   if(memberId&&!old.exists())throw Error('Das ausgewählte Mitglied existiert nicht mehr.');
   if(expectedUpdatedAt!==undefined&&(old.data()?.updatedAt?.toMillis?.()??null)!==expectedUpdatedAt)throw Error('Das Mitglied wurde inzwischen geändert. Bitte neu prüfen.');
-  const member=applicationMember(data??application.data().data,{id:target,existing:old.data(),number,joined,applicationId:id}),allocation=!old.exists()?await allocateMandate(tx,member.joined,seed):null,profileRef=member.accountUid?api.doc(db,'memberProfiles',member.accountUid):null,profile=profileRef?await tx.get(profileRef):null;
+  const member=applicationMember(data??application.data().data,{id:target,existing:old.data(),number,joined,applicationId:id});
+  if(accountUid!==undefined){
+   if(member.accountUid&&member.accountUid!==accountUid)throw Error('Das Mitglied hat bereits ein Konto. Bitte dieses beibehalten oder später ausdrücklich ändern.');
+   if(accountUid){const role=await tx.get(api.doc(db,'roles',accountUid));if(!role.exists()||role.data().disabled)throw Error('Das ausgewählte Konto ist nicht verfügbar.');}
+   member.accountUid=accountUid;
+  }
+  const allocation=!old.exists()?await allocateMandate(tx,member.joined,seed):null,profileRef=member.accountUid?api.doc(db,'memberProfiles',member.accountUid):null,profile=profileRef?await tx.get(profileRef):null;
+  if(profile?.exists()&&profile.data().memberId!==target)throw Error('Dieses Konto ist bereits mit einem anderen Mitglied verknüpft.');
   if(allocation){member.mandate=allocation.reference;member.number=String(allocation.number);writeMandateCounter(tx,allocation);}
   const {id:unused,...fields}=member;tx.set(api.doc(db,'members',target),{...fields,updatedAt:api.serverTimestamp()});
   if(profileRef)tx.set(profileRef,{...memberProfile(member,(profile?.data()?.revision??-1)+1),updatedAt:api.serverTimestamp()});
   tx.set(api.doc(db,'membershipReviews',id),{status:'accepted',memberId:target,note:'',reviewedBy:auth.currentUser.uid,reviewedAt:api.serverTimestamp()});return target;
  });
+ // Die Aufnahme ist bereits gespeichert; Teilnahmen können anschließend separat verknüpft werden.
+ return result;
 }
 export async function rejectMembership(id,note){
  await requireBoardAccount();if(!String(note).trim())throw Error('Bitte eine interne Begründung angeben.');
@@ -355,13 +391,55 @@ export async function linkMemberAccount(memberId,uid){
  });
  if(uid)await syncMemberParticipationAccount(memberId,uid);
 }
+/** Eigenes Profil enthält nur eigene Stammdaten, keine Beiträge oder Vorstandsnotizen. */
 export function watchMyProfile(onProfile,onError){
  liveOnly();const user=auth?.currentUser;if(!user||user.isAnonymous){onProfile(null);return()=>{};}
- return api.onSnapshot(api.doc(db,'memberProfiles',user.uid),s=>onProfile(s.exists()?s.data():null),onError);
+ let profile=null,changeRequest=null;const paint=()=>onProfile(profile?{...profile,changeRequest}:null);
+ const a=api.onSnapshot(api.doc(db,'memberProfiles',user.uid),s=>{profile=s.exists()?s.data():null;paint();},onError);
+ const b=api.onSnapshot(api.doc(db,'memberProfileChanges',user.uid),s=>{changeRequest=s.exists()?s.data():null;paint();},onError);
+ return()=>{a();b();};
 }
+/** Keine direkten Mitgliedsänderungen: ein Antrag pro verknüpftem Konto. */
 export async function saveMyProfile(input,expectedRevision){
- liveOnly();const user=auth?.currentUser;if(!user||user.isAnonymous)throw Error('Bitte mit deinem Mitgliedskonto anmelden.');const contact=normalizeContact(input);
- await api.runTransaction(db,async tx=>{const ref=api.doc(db,'memberProfiles',user.uid),old=await tx.get(ref);if(!old.exists())throw Error('Dein Konto ist noch nicht verknüpft.');const p=old.data();if(p.revision!==expectedRevision)throw Error('Die Daten wurden inzwischen geändert. Bitte neu öffnen.');tx.update(api.doc(db,'members',p.memberId),{...contact,updatedAt:api.serverTimestamp()});tx.set(ref,{...p,...contact,revision:p.revision+1,updatedAt:api.serverTimestamp()});});
+ liveOnly();const user=auth?.currentUser;if(!user||user.isAnonymous)throw Error('Bitte mit deinem Mitgliedskonto anmelden.');
+ const changes=normalizeProfileChange(input);
+ await api.runTransaction(db,async tx=>{
+  const ref=api.doc(db,'memberProfiles',user.uid),requestRef=api.doc(db,'memberProfileChanges',user.uid);
+  const [old,request]=await Promise.all([tx.get(ref),tx.get(requestRef)]);
+  if(!old.exists())throw Error('Dein Konto ist noch nicht verknüpft.');const p=old.data();
+  if(p.revision!==expectedRevision)throw Error('Die Daten wurden inzwischen geändert. Bitte neu öffnen.');
+  if(!Object.hasOwn(p,'iban'))throw Error('Der Vorstand muss dein Mitgliederprofil einmal aktualisieren. Bitte den Vorstand bitten, „Mitgliedsanträge & Datenänderungen“ zu öffnen.');
+  if(request.data()?.status==='pending')throw Error('Deine vorige Änderung wird noch vom Vorstand geprüft.');
+  const before=profileValues(p);
+  if(JSON.stringify(before)===JSON.stringify(changes))throw Error('Es wurden keine Daten geändert.');
+  tx.set(requestRef,{memberId:p.memberId,baseRevision:p.revision,before,changes,status:'pending',submittedAt:api.serverTimestamp(),reviewedAt:null,reviewedBy:'',note:''});
+ });
+}
+/** Beim ersten Öffnen werden ältere private Profile um die eigenen Bankdaten ergänzt. */
+export async function listProfileChanges(){
+ await requireBoardAccount();const [profiles,members]=await Promise.all([api.getDocs(api.collection(db,'memberProfiles')),listMembers()]);
+ for(const row of profiles.docs){if(Object.hasOwn(row.data(),'iban'))continue;const member=members.find(m=>m.accountUid===row.id&&m.id===row.data().memberId);if(!member)continue;
+  await api.runTransaction(db,async tx=>{const ref=api.doc(db,'memberProfiles',row.id),m=await tx.get(api.doc(db,'members',member.id)),p=await tx.get(ref);if(m.data()?.accountUid===row.id&&p.exists()&&!Object.hasOwn(p.data(),'iban'))tx.set(ref,{...memberProfile({id:member.id,...m.data()},p.data().revision+1),updatedAt:api.serverTimestamp()});});
+ }
+ const requests=await api.getDocs(api.collection(db,'memberProfileChanges'));return requests.docs.map(s=>({id:s.id,...s.data()}));
+}
+export async function reviewProfileChange(uid,{status,note='',expectedSubmittedAt}={}){
+ await requireBoardAccount();if(!['accepted','rejected'].includes(status))throw Error('Ungültige Entscheidung.');
+ if(status==='rejected'&&!note.trim())throw Error('Bitte die Ablehnung kurz begründen.');
+ await api.runTransaction(db,async tx=>{
+  const ref=api.doc(db,'memberProfileChanges',uid),request=await tx.get(ref),r=request.data();
+  if(!r||r.status!=='pending'||expectedSubmittedAt!==undefined&&(r.submittedAt?.toMillis?.()??null)!==expectedSubmittedAt)throw Error('Die Anfrage wurde inzwischen bearbeitet.');
+  if(status==='accepted'){
+   const mRef=api.doc(db,'members',r.memberId),pRef=api.doc(db,'memberProfiles',uid),[m,p]=await Promise.all([tx.get(mRef),tx.get(pRef)]);
+   if(!m.exists()||m.data().accountUid!==uid||!p.exists()||p.data().memberId!==r.memberId)throw Error('Die Kontoverknüpfung hat sich geändert. Bitte zuerst prüfen.');
+   if(p.data().revision!==r.baseRevision||JSON.stringify(profileValues(m.data()))!==JSON.stringify(profileValues(r.before)))throw Error('Die Stammdaten wurden inzwischen geändert. Bitte die Anfrage ablehnen und eine neue Änderung anfordern.');
+   const changes=normalizeProfileChange(r.changes),member={...m.data(),...changes};
+   // Eine neue IBAN hebt eine bestehende Rücklastschrift-Sperre nicht selbstständig auf.
+   tx.update(mRef,{...changes,updatedAt:api.serverTimestamp()});
+   tx.set(pRef,{...memberProfile({id:r.memberId,...member},p.data().revision+1),updatedAt:api.serverTimestamp()});
+  }
+  tx.update(ref,{status,note:note.trim().slice(0,1000),reviewedBy:auth.currentUser.uid,reviewedAt:api.serverTimestamp()});
+ });
 }
 export async function importPrivateRecords(input,onProgress=()=>{}){
  await requireBoardAccount();const data=validatePrivateImport(input);
@@ -424,7 +502,7 @@ export async function removeAccountAccess(uid){
  const bindings=[];
  for(const collection of ['members','persons','participations']){const result=await api.getDocs(api.query(api.collection(db,collection),api.where('accountUid','==',uid)));for(const d of result.docs)bindings.push({ref:api.doc(db,collection,d.id),unlink:true});}
  const teams=await api.getDocs(api.collection(db,'accountTeams',uid,'events'));for(const d of teams.docs)bindings.push({ref:api.doc(db,'accountTeams',uid,'events',d.id),unlink:false});
- bindings.push({ref:api.doc(db,'memberProfiles',uid),unlink:false},{ref:api.doc(db,'accountActivity',uid),unlink:false});
+ bindings.push({ref:api.doc(db,'memberProfiles',uid),unlink:false},{ref:api.doc(db,'memberProfileChanges',uid),unlink:false},{ref:api.doc(db,'accountActivity',uid),unlink:false});
  for(let offset=0;offset<bindings.length;offset+=100){const batch=bindings.slice(offset,offset+100);await api.runTransaction(db,async tx=>{const records=await Promise.all(batch.map(b=>tx.get(b.ref)));for(let i=0;i<batch.length;i++){const b=batch[i],old=records[i];if(!old.exists())continue;if(b.unlink){if(old.data().accountUid===uid)tx.update(b.ref,{accountUid:'',updatedAt:api.serverTimestamp()});}else tx.delete(b.ref);}});}
  await api.deleteDoc(roleRef);return{uid,authDeletionRequired:true};
 }

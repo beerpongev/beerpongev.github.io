@@ -1,4 +1,13 @@
 /** Abgleich vorhandener App-Konten; Login-Adresse und Mitgliedskontakt bleiben getrennt. */
+export function playerInvitationIssue(row){
+ const players=row.players??[];
+ if(players.length!==2)return 'Für Einladungen müssen zwei Spieler hinterlegt sein.';
+ const missing=players.filter(p=>!String(p.email??'').trim());
+ if(missing.length)return 'Die persönliche E-Mail-Adresse fehlt bei '+missing.map(p=>[p.firstName,p.lastName].filter(Boolean).join(' ')).join(' und ')+'.';
+ const emails=players.map(p=>p.email.trim().toLowerCase());
+ if(emails.some(email=>! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))return 'Bitte gültige persönliche E-Mail-Adressen ergänzen.';
+ return emails[0]===emails[1]?'Die Spieler benötigen zwei unterschiedliche persönliche E-Mail-Adressen.':'';
+}
 export function resolvePlayerAccount(person,{directory=null,members=[],identities=[]}={}){
  if(!Array.isArray(directory))return{key:'loading'};
  const email=String(person.email??'').trim().toLowerCase(),identity=identities.find(p=>p.id===person.personId)||identities.find(p=>email&&p.email?.toLowerCase()===email),member=person.verified&&person.member?members.find(m=>m.id===person.memberId&&m.active):undefined,uid=identity?.accountUid||member?.accountUid;
