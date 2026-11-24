@@ -30,7 +30,7 @@ export function mergeTournamentCatalog(remote=[]){
 }
 export const tournamentDate=t=>new Date(t.date+'T12:00:00').toLocaleDateString('de-DE',{day:'2-digit',month:'long',year:'numeric'});
 const openButton=(t,label='Turnier ansehen')=>`<button class="button ${t.archived?'light':''}" data-action="tournament-select" data-id="${e(t.id)}">${label} ↗</button>`;
-export function tournamentCard(t){return `<article class="panel club-event-card"><div class="club-card-meta"><span class="tag ${t.archived?'':'red-tag'}">${t.archived?'ARCHIV':'TURNIER'}</span><span>${e(t.date.slice(0,4))}</span></div><h3>${e(t.title)}</h3><p class="club-event-detail">${e(tournamentDate(t))}<br>${e(t.venue)}</p>${t.externalUrl?'<p class="legend">Alle Spielergebnisse und Gruppentabellen aus dem Originalspielplan.</p>':''}${openButton(t,t.archived?'Ergebnisse ansehen':'Zum Turnier')}</article>`;}
+export function tournamentCard(t,{canManage=false}={}){const open=openButton(t,t.archived?'Ergebnisse ansehen':'Zum Turnier');return `<article class="panel club-event-card"><div class="club-card-meta"><span class="tag ${t.archived?'':'red-tag'}">${t.archived?'ARCHIV':'TURNIER'}</span><span>${e(t.date.slice(0,4))}</span></div><h3>${e(t.title)}</h3><p class="club-event-detail">${e(tournamentDate(t))}<br>${e(t.venue)}</p>${t.externalUrl?'<p class="legend">Alle Spielergebnisse und Gruppentabellen aus dem Originalspielplan.</p>':''}${canManage&&!t.archived&&!t.externalUrl?`<div class="club-event-actions">${open}<button class="button light" data-action="tournament-registrations" data-id="${e(t.id)}">Anmeldungen verwalten</button></div>`:open}</article>`;}
 export function homeView(catalog,registrationSettings={}){
   const future=catalog.filter(t=>!t.archived&&t.date>=localDate()).sort((a,b)=>a.date.localeCompare(b.date));
   const next=future[0]??catalog.find(t=>!t.archived),last=null;
@@ -38,7 +38,7 @@ export function homeView(catalog,registrationSettings={}){
 }
 export function tournamentsView(catalog,canManage){
   const upcoming=catalog.filter(t=>!t.archived),archive=[];
-  return `<div class="section-head"><div><p class="eyebrow">VOM ERSTEN WURF BIS INS ARCHIV</p><h2>Unsere Turniere.</h2><p>Das nächste Turnier planen. Vergangene Spiele wiederfinden.</p></div>${canManage?'<button class="button light" data-action="tournament-new">Turnier anlegen</button>':''}</div><h3 class="club-list-heading">Aktuelle & kommende Turniere</h3><div class="club-event-grid">${upcoming.map(tournamentCard).join('')||'<p>Aktuell ist kein weiteres Turnier eingetragen.</p>'}</div>`;
+  return `<div class="section-head"><div><p class="eyebrow">VOM ERSTEN WURF BIS INS ARCHIV</p><h2>Unsere Turniere.</h2><p>Das nächste Turnier planen. Vergangene Spiele wiederfinden.</p></div>${canManage?'<button class="button light" data-action="tournament-new">Turnier anlegen</button>':''}</div><h3 class="club-list-heading">Aktuelle & kommende Turniere</h3><div class="club-event-grid">${upcoming.map(t=>tournamentCard(t,{canManage})).join('')||'<p>Aktuell ist kein weiteres Turnier eingetragen.</p>'}</div>`;
 }
 export function externalArchiveView(t,view='overview'){
   const data=archives.get(t.id),qualified=new Set(data?.knockout.filter(m=>m.round==='Achtelfinale').flatMap(m=>[m.a,m.b])??[]);

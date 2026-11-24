@@ -143,6 +143,12 @@ async function chooseTournament(id,keepBoard=false){
   else{readStateCache();if(cloudReady)syncLiveState();}
   watchOwnTeam();syncLocation(true);render(true);window.scrollTo(0,0);
 }
+async function openTournamentRegistrations(id){
+ const target=catalog.find(t=>t.id===id);
+ if(!board()||busy||!target||target.archived||target.externalUrl)return;
+ if(id!==selectedTournamentId)await chooseTournament(id);
+ if(board()&&selectedTournamentId===id&&!isReadOnly())navigateView('registrations');
+}
 function renderTournamentNavigation(){
   const show=['overview','groups','bracket','teams','admin','board','registrations','games'].includes(view),meta=currentTournament();
   $('#tournament-context').hidden=!show;$('#tournament-navigation').hidden=!show||['board','registrations'].includes(view);
@@ -367,6 +373,7 @@ function handleAction(action,id){
     case 'show-tournaments':navigateView('tournaments');break;
     case 'team-history':if(canHistory()){view='history';render(true);const root=$('#club-feature-root');if(root){root.dataset.query=id;root.dataset.currentTeam=id;const t=state?.teams.find(t=>t.name===id);root.dataset.currentPlayers=JSON.stringify(t?[t.p1,t.p2]:[]);}}else toast('Bitte anmelden, um die Historie zu öffnen.');break;
     case 'tournament-select':void chooseTournament(id);break;
+    case 'tournament-registrations':void openTournamentRegistrations(id).catch(error=>toast(humanError(error)));break;
     case 'tournament-new':if(board())tournamentDialog();break;
     case 'tournament-edit':if(board()&&currentTournament())tournamentDialog(currentTournament());break;
     case 'tournament-archive':if(board()&&state?.phase==='complete'&&!isReadOnly()&&confirm('Dieses abgeschlossene Turnier dauerhaft ins Archiv übernehmen? Der Spielplan wird danach nur noch lesbar sein.'))void archiveCurrentTournament();break;
