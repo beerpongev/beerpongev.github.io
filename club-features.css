@@ -14,6 +14,21 @@
 .profile-change-grid dd span,.profile-change-grid dd strong{display:block;overflow-wrap:anywhere}
 /* Große Touch-Fläche, private Inhalte nur in der geöffneten Leitungsansicht. */
 .notification-control{position:relative;flex-shrink:0}
+.member-invitation-panel>summary{font-weight:750;font-size:1rem}
+.member-invitation-panel p{overflow-wrap:anywhere}
+.member-invitation-counts{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.85rem}
+.member-invitation-filters{margin:18px 0}
+.member-invitation-filters label{min-width:0;font-weight:700;font-size:.85rem}
+.member-invitation-filters input,.member-invitation-filters select{width:100%;min-width:0;display:block;margin-top:8px}
+.member-invitation-progress:empty{display:none}
+.member-invitation-list{margin-top:18px;border-top:1px solid var(--line)}
+.member-invitation-row{display:grid;grid-template-columns:24px minmax(0,1fr);gap:12px;padding:16px 0;border-bottom:1px solid var(--line);min-width:0;align-items:start}
+.member-invitation-row>input{width:24px;height:24px;margin:0}
+.member-invitation-row>div{min-width:0}
+.member-invitation-row strong,.member-invitation-row small{display:block;overflow-wrap:anywhere}
+.member-invitation-row small,.member-invitation-row p{font-size:.8rem;margin:5px 0}
+.member-invitation-row>.contribution-tag{grid-column:2;width:fit-content}
+@media(min-width:850px){.member-invitation-row{grid-template-columns:24px minmax(0,1fr) minmax(130px,.6fr)}.member-invitation-row>.contribution-tag{grid-column:3}}
 /* Die gesamte Kopfebene muss über der klebenden Navigation liegen. */
 .masthead:has(.notification-control details[open]){z-index:30;overflow:visible}
 .notification-control summary{list-style:none;cursor:pointer;position:relative;display:grid;place-items:center;width:44px;height:44px;min-height:44px;padding:0;border:1px solid #ffffff65;border-radius:12px;color:var(--cream,#fffdf7)}

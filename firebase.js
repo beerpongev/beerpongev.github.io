@@ -2,7 +2,7 @@ import {createClubStore} from './club-store.js';
 import {normalizePrices} from './pricing.js';
 import { firebaseConfig, tournamentId, useEmulators, appCheckSiteKey } from './config.js';
 import { runStateTransaction } from './transaction.js';
-import {memberInvitationPlan,defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact,profileValues,normalizeProfileChange} from './registration.js';
+import {memberInvitationPlan,memberInvitationSnapshot,defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact,profileValues,normalizeProfileChange} from './registration.js';
 import {contributionReviewSnapshot,contributionFor,validYear,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
 import {cancelRegistrationTeam} from './team-transfer.js';
@@ -427,12 +427,13 @@ export async function rejectMembership(id,note){
 /** Globaler Zähler: 120 folgt auf den bisherigen Bestand 119, auch über Jahreswechsel. */
 async function allocateMandate(tx,joined,seed){const ref=api.doc(db,'mandateCounters','global'),old=await tx.get(ref);return{...nextMandate(mandateYear(joined),seed,old.data()?.lastNumber??0),ref};}
 function writeMandateCounter(tx,allocation){tx.set(allocation.ref,{lastNumber:allocation.number,updatedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});}
-export async function linkMemberAccount(memberId,uid){
+export async function linkMemberAccount(memberId,uid,{expectedInvitationMember}={}){
  await requireBoardAccount();
  await api.runTransaction(db,async tx=>{
   const ref=api.doc(db,'members',memberId),profileRef=uid?api.doc(db,'memberProfiles',uid):null;
   const [member,role,profile]=await Promise.all([tx.get(ref),uid?tx.get(api.doc(db,'roles',uid)):null,profileRef?tx.get(profileRef):null]);
   if(!member.exists())throw Error('Mitglied nicht gefunden.');if(uid&&(!role.exists()||role.data()?.disabled))throw Error('Bitte ein vorhandenes, nicht gesperrtes Benutzerkonto auswählen.');
+  if(expectedInvitationMember!==undefined&&memberInvitationSnapshot({id:memberId,...member.data()})!==expectedInvitationMember)throw Error('Das Mitglied wurde seit der Vorschau geändert. Bitte neu prüfen.');
   if(profile?.exists()&&profile.data().memberId!==memberId)throw Error('Das Konto gehört bereits zu einem anderen Mitglied.');
   const old=member.data(),next=normalizeMember({...old,accountUid:uid});
   const personRef=uid&&old.personId?api.doc(db,'persons',old.personId):null,person=personRef?await tx.get(personRef):null;
@@ -534,20 +535,32 @@ export async function publishSportLineups(id){
 }
 
 export async function previewMemberInvitations(){
- await requireBoardAccount();const [members,accounts,log]=await Promise.all([listMembers(),listAccounts(),api.getDocs(api.collection(db,'memberInvitations'))]);
- return memberInvitationPlan(members,accounts.map(a=>({...a,uid:a.uid??a.id})),log.docs.map(d=>({id:d.id,...d.data()})));
+ await requireBoardAccount();const [members,accounts,log,profiles,persons,events]=await Promise.all([listMembers(),listAccounts(),api.getDocs(api.collection(db,'memberInvitations')),api.getDocs(api.collection(db,'memberProfiles')),listPersons(),api.getDocs(api.collection(db,'registrationEvents'))]);
+ const previous=await Promise.all(events.docs.map(d=>api.getDocs(api.collection(db,'playerInvitations',d.id,'entries'))));
+ return memberInvitationPlan(members,accounts,log.docs.map(d=>({id:d.id,...d.data()})),{profiles:profiles.docs.map(d=>({id:d.id,...d.data()})),persons,playerInvitations:previous.flatMap(s=>s.docs.map(d=>d.data()))});
 }
-export async function sendMemberInvitations(memberIds){
+/** Nur neue Konten erhalten E-Mails. Verknüpfen vorhandener Konten ist ein eigener Schritt. */
+export async function sendMemberInvitations(memberIds,{expectedSnapshots=null,canContinue=()=>true,onProgress=()=>{}}={}){
  await requireBoardAccount();if(!Array.isArray(memberIds)||memberIds.length>20)throw Error('Bitte höchstens 20 Einladungen pro Durchlauf.');
  const plan=await previewMemberInvitations(),results=[];
  for(const id of [...new Set(memberIds)]){
-  const item=plan.find(p=>p.memberId===id&&p.eligible);if(!item)continue;
+  if(!canContinue())break;await requireBoardAccount();
+  const item=plan.find(p=>p.memberId===id);
+  if(expectedSnapshots&&(!Object.hasOwn(expectedSnapshots,id)||expectedSnapshots[id]!==item?.snapshot)){const result={id,status:'changed',message:'Mitglied oder Konto wurde seit der Vorschau geändert. Kein Versand.'};results.push(result);onProgress(result);break;}
+  if(!item?.eligible){const result={id,status:'skipped',message:item?.detail||'Nicht mehr verfügbar.'};results.push(result);onProgress(result);continue;}
+  if(item.kind==='link'){
+   try{await linkMemberAccount(id,item.uid,{expectedInvitationMember:item.memberSnapshot});const result={id,status:'linked',uid:item.uid};results.push(result);onProgress(result);}
+   catch(error){const result={id,status:'review',message:String(error.message??error)};results.push(result);onProgress(result);break;}
+   continue;
+  }
   const ref=api.doc(db,'memberInvitations',id);
-  const claimed=await api.runTransaction(db,async tx=>{const old=await tx.get(ref);if(old.exists())return false;tx.set(ref,{status:'processing',email:item.loginEmail,updatedAt:api.serverTimestamp()});return true;});if(!claimed)continue;
+  const claimed=await api.runTransaction(db,async tx=>{const [old,member]=await Promise.all([tx.get(ref),tx.get(api.doc(db,'members',id))]);if(old.exists()||!member.exists()||memberInvitationSnapshot({id,...member.data()})!==item.memberSnapshot)return false;tx.set(ref,{status:'processing',email:item.loginEmail,updatedAt:api.serverTimestamp()});return true;});
+  if(!claimed){const result={id,status:'changed',message:'Vorgang bereits begonnen oder Mitglied geändert. Kein erneuter Versand.'};results.push(result);onProgress(result);break;}
+  let uid='';
   try{
-   let uid=item.uid;if(uid){await linkMemberAccount(id,uid);await inviteAccount(item.loginEmail);}else{uid=await createAccount({email:item.email,name:item.name,role:'guest',teamId:''});await linkMemberAccount(id,uid);}
-   await api.runTransaction(db,async tx=>{const old=await tx.get(ref);tx.set(ref,{...old.data(),status:'sent',uid,updatedAt:api.serverTimestamp()});});results.push({id,status:'sent'});
-  }catch(error){await api.runTransaction(db,async tx=>{const old=await tx.get(ref);tx.set(ref,{...old.data(),status:'review',message:String(error.message??error).slice(0,600),updatedAt:api.serverTimestamp()});});results.push({id,status:'review'});break;}
+   uid=await createAccount({email:item.email,name:item.name,role:'guest',teamId:''});await linkMemberAccount(id,uid,{expectedInvitationMember:item.memberSnapshot});
+   await api.runTransaction(db,async tx=>{const old=await tx.get(ref);tx.set(ref,{...old.data(),status:'sent',uid,updatedAt:api.serverTimestamp()});});const result={id,status:'sent',uid};results.push(result);onProgress(result);
+  }catch(error){const message=String(error.message??error).slice(0,600);await api.runTransaction(db,async tx=>{const old=await tx.get(ref);tx.set(ref,{...old.data(),status:'review',...(uid?{uid}:{}),message,updatedAt:api.serverTimestamp()});});const result={id,status:'review',message};results.push(result);onProgress(result);break;}
  }
  return results;
 }

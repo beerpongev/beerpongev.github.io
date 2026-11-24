@@ -112,12 +112,31 @@ export function validatePrivateImport(data){
  for(const a of archiveSnapshots)need(/^official-(11|12|13|14)-20[0-9]{2}$/.test(a.id)&&Array.isArray(a.groups)&&Array.isArray(a.knockout)&&Array.isArray(a.lineups)&&a.lineups.length<=100,'Ungültiges Sportarchiv.');
  return{format:data.format,tournamentId:data.tournamentId,members,registrations,archiveLineups,archiveSnapshots};
 }
-export function memberInvitationPlan(members,accounts,logs=[]){
+/** Nur Identität/Kontakt prüfen; keine Bank- oder Beitragsdaten im Einladungsplan. */
+export const memberInvitationSnapshot=m=>JSON.stringify([m.id,m.firstName,m.lastName,String(m.email??'').trim().toLowerCase(),!!m.active,m.accountUid||'',m.personId||'']);
+export function memberInvitationPlan(members,accounts,logs=[],{profiles=[],persons=[],playerInvitations=[]}={}){
  const email=x=>String(x??'').trim().toLowerCase();
  return members.filter(m=>m.active).map(m=>{
-  const old=logs.find(l=>l.id===m.id),matches=accounts.filter(a=>a.uid===m.accountUid||email(a.email)===email(m.email));
-  const account=m.accountUid?accounts.find(a=>a.uid===m.accountUid):matches.length===1?matches[0]:null;
-  const issue=old?'Bereits bearbeitet: '+old.status+(old.message?' · '+old.message:''):account?.disabled?'Benutzerkonto ist gesperrt; Bereinigung zuerst abschließen':!m.email||!/^[^ @]+@[^ @]+\.[^ @]+$/.test(m.email)?'E-Mail fehlt oder ungültig':members.some(other=>other.id!==m.id&&other.active&&email(other.email)===email(m.email))?'E-Mail wird von mehreren Mitgliedern verwendet':m.accountUid&&!account?'Verknüpftes Konto fehlt':matches.length>1&&!m.accountUid?'Mehrere Konten gefunden':'';
-  return{memberId:m.id,name:fullName(m),email:m.email,uid:account?.uid??'',loginEmail:account?.email??m.email,eligible:!issue,issue,action:account?'Vorhandenes Konto verknüpfen und Zugangsmail senden':'Konto anlegen, verknüpfen und einladen'};
- });
+  const old=logs.find(l=>l.id===m.id),contact=email(m.email),byEmail=accounts.filter(a=>contact&&email(a.email)===contact);
+  const person=persons.find(p=>p.id===m.personId)||persons.find(p=>p.memberId===m.id),uid=m.accountUid||person?.accountUid||'',account=uid?accounts.find(a=>a.uid===uid):byEmail.length===1?byEmail[0]:null;
+  const profile=account?profiles.find(p=>p.id===account.uid):null,other=account?members.find(p=>p.id!==m.id&&p.accountUid===account.uid):null;
+  let kind='invite',issue='',detail='Neues persönliches Konto und Passwort-Mail.';
+  if(m.accountUid&&person?.accountUid&&m.accountUid!==person.accountUid)issue='Mitglied und Person sind mit unterschiedlichen Konten verbunden.';
+  else if(uid&&!account)issue='Das verknüpfte Benutzerkonto fehlt.';
+  else if(byEmail.length>1||account&&byEmail.some(a=>a.uid!==account.uid))issue='Kontaktadresse und Kontoverknüpfung sind nicht eindeutig.';
+  else if(account?.disabled)issue='Das Benutzerkonto ist gesperrt.';
+  else if(other||profile&&profile.memberId!==m.id)issue='Das Konto ist bereits einem anderen Mitglied zugeordnet.';
+  else if(old&&old.status!=='sent')issue='Früherer Einladungsversuch ist noch offen oder muss geprüft werden.';
+  else if(old?.status==='sent'&&!account)issue='Eine Einladung ist protokolliert, das zugehörige Konto wurde aber nicht gefunden.';
+  else if(account){kind=m.accountUid===account.uid&&profile?.memberId===m.id?'existing':'link';detail=kind==='existing'?'Zugang vorhanden und Mitglied bereits verknüpft. Keine neue Mail.':'Vorhandenes Konto mit dem Mitglied verknüpfen. Keine neue Mail.';}
+  else if(!contact||!/^[^ @/]+@[^ @/]+\.[^ @/]+$/.test(contact))issue='E-Mail-Adresse fehlt oder ist ungültig.';
+  else if(members.some(p=>p.id!==m.id&&p.active&&email(p.email)===contact))issue='Mehrere aktive Mitglieder verwenden diese E-Mail-Adresse.';
+  else if(playerInvitations.some(p=>email(p.email)===contact))issue='Für diese Adresse gibt es bereits einen Turnier-Einladungsversuch. Konto bitte prüfen.';
+  else if(accounts.some(a=>nameKey(a.name)===nameKey(fullName(m))))issue='Ein Konto mit gleichem Namen, aber anderer Adresse existiert bereits. Bitte zuordnen.';
+  if(!issue&&account&&!m.accountUid&&members.some(p=>p.id!==m.id&&p.active&&email(p.email)===contact))issue='Mehrere aktive Mitglieder verwenden diese E-Mail-Adresse.';
+  if(issue){kind='review';detail=issue;}
+  else if(old?.status==='sent'&&kind==='existing'){kind='done';detail='Bereits eingeladen und verknüpft. Keine erneute Mail.';}
+  const memberSnapshot=memberInvitationSnapshot(m),snapshot=JSON.stringify([memberSnapshot,kind,account?.uid||'',email(account?.email),profile?.memberId||'',old?.status||'']);
+  return{memberId:m.id,number:m.number??'',name:fullName(m),email:contact,uid:account?.uid??'',loginEmail:account?.email??contact,kind,eligible:['invite','link'].includes(kind),issue,detail,memberSnapshot,snapshot,action:kind==='invite'?'Neues Konto & Einladung':kind==='link'?'Nur verknüpfen · ohne Mail':detail};
+ }).sort((a,b)=>a.name.localeCompare(b.name,'de'));
 }

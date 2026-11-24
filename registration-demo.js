@@ -4,7 +4,9 @@ import {defaultRegistrationSettings,normalizeMember,normalizeRegistration,reconc
 import {contributionReviewSnapshot,contributionFor,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
 import {cancelRegistrationTeam} from './team-transfer.js';
+import {memberInvitationPlan} from './registration.js';
 export function createDemoRegistry({getTournamentState=()=>null,saveTournamentState=()=>{}}={}){
+ const invitationAccounts=new Map(),invitationLogs=new Map();
  const contributions=new Map(),transactions=new Map(),listeners=new Set(),persons=new Map(),publicPlayers=new Map(),participations=new Map(),corrections=new Map(),debitExports=new Map();let clubSettings={};let sportArchives=[];
  const profileChanges=new Map();let deletedSequence=119;
  const events=new Map(),entries=new Map(),members=new Map(),applications=[{id:'demo-application',filename:'Demo-Antrag.pdf',data:{firstName:'Mika',lastName:'Beispiel',birthDate:'2000-01-02',email:'mika@example.test',phone:'0123456789',street:'Beispielweg 1',postalCode:'21423',city:'Musterstadt',occupation:'',bank:'Beispielbank',iban:'DE89370400440532013000',accountHolder:'',applicationPlace:'Musterstadt',applicationDate:'2026-11-17',debitPlace:'Musterstadt',debitDate:'2026-11-17'}}];
@@ -56,6 +58,19 @@ export function createDemoRegistry({getTournamentState=()=>null,saveTournamentSt
    events.set(id,settings);if(old)Object.assign(old,row);else rows.push(row);return copy({...row,...(cancelled?{teamRemoval:cancelled.teamRemoval}:{})});
   },
   listMembers:async()=>copy([...members.values()]),
+  previewMemberInvitations:async()=>{
+   const users=[...invitationAccounts.values()];for(const m of members.values())if(m.accountUid&&!users.some(u=>u.uid===m.accountUid))users.push({uid:m.accountUid,email:m.email,name:m.firstName+' '+m.lastName,role:'guest'});
+   return copy(memberInvitationPlan([...members.values()],users,[...invitationLogs.values()],{profiles:[...members.values()].filter(m=>m.accountUid).map(m=>({id:m.accountUid,memberId:m.id})),persons:[...persons.values()]}));
+  },
+  sendMemberInvitations:async(ids,{expectedSnapshots=null,canContinue=()=>true,onProgress=()=>{}}={})=>{
+   if(!Array.isArray(ids)||ids.length>20)throw Error('Höchstens 20 pro Durchlauf.');const results=[];
+   for(const id of [...new Set(ids)]){if(!canContinue())break;const item=(await api.previewMemberInvitations()).find(p=>p.memberId===id);let result;
+    if(expectedSnapshots&&expectedSnapshots[id]!==item?.snapshot)result={id,status:'changed',message:'Vorschau wurde geändert. Bitte neu prüfen.'};
+    else if(!item?.eligible)result={id,status:'skipped'};
+    else{const m=members.get(id),uid=item.uid||'demo-invitation-'+id;m.accountUid=uid;if(item.kind==='invite'){invitationAccounts.set(uid,{uid,name:item.name,email:item.email,role:'guest'});invitationLogs.set(id,{id,status:'sent',email:item.email,uid});}result={id,status:item.kind==='link'?'linked':'sent',uid};}
+    results.push(result);onProgress(result);if(result.status==='changed'||result.status==='review')break;
+   }return results;
+  },
   watchContributions:async(year,callback)=>{const fn=()=>callback(copy([...contributions.values()].filter(r=>r.year===String(year))));listeners.add(fn);fn();return()=>listeners.delete(fn);},
   saveContribution:async(memberId,year,input,revision)=>{const key=year+'/'+memberId,old=contributions.get(key);if((old?.revision??-1)!==revision)throw Error('Der Beitrag wurde inzwischen geändert.');contributions.set(key,{...normalizeContribution(input),memberId,year:String(year),revision:revision+1});listeners.forEach(fn=>fn());},
   recordContributionPayment:async(memberId,year,row,kind)=>{if(transactions.has(row.id))return{duplicate:true};const key=year+'/'+memberId,current=contributions.get(key)??legacyContribution(members.get(memberId),year),next=applyBankPayment(current,row,kind);contributions.set(key,{...next,memberId,year:String(year),revision:current.revision+1});transactions.set(row.id,{...copy(row),memberId,year:String(year),kind,paidDelta:next.paidCents-current.paidCents,createdAt:Date.now()});if(kind==='return'){Object.assign(members.get(memberId),{bankStatus:'unclear',bankNote:'Rücklastschrift vom '+row.date+' · Bankverbindung prüfen.'});}listeners.forEach(fn=>fn());return{duplicate:false};},
