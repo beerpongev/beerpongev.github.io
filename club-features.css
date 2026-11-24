@@ -12,3 +12,18 @@
 .profile-change-grid div,.profile-change-grid dd{min-width:0;margin:0}
 .profile-change-grid dt{font-weight:700}
 .profile-change-grid dd span,.profile-change-grid dd strong{display:block;overflow-wrap:anywhere}
+/* Große Touch-Fläche, private Inhalte nur in der geöffneten Leitungsansicht. */
+.notification-control{position:relative;flex-shrink:0}
+.notification-control summary{list-style:none;cursor:pointer;position:relative;display:grid;place-items:center;width:44px;height:44px;border:1px solid #ffffff65;border-radius:12px;color:var(--cream,#fffdf7)}
+.notification-control summary::-webkit-details-marker{display:none}
+.notification-control svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.notification-control .notification-count{position:absolute;top:-8px;right:-7px;background:#d40020;color:white;border-radius:20px;padding:0 6px;min-width:22px;font-size:.75rem;text-align:center}
+.notification-panel{position:fixed;z-index:90;right:12px;top:calc(var(--demo-toolbar-height,0px) + 5rem);width:min(420px,calc(100vw - 24px));max-height:70dvh;overflow:auto;padding:20px;border:1px solid var(--line,#ddd);border-radius:16px;box-shadow:0 14px 55px #0005;background:var(--cream,#fffdf7);color:var(--navy,#011e35)}
+.notification-panel h2{font-size:1.3rem;margin:0 0 10px}
+.notification-item{display:block;text-align:left;width:100%;min-height:64px;padding:12px;margin-top:10px;background:#fffdf7;color:#011e35;border:1px solid #d8dcd7;border-radius:9px;overflow-wrap:anywhere;cursor:pointer}
+.notification-item strong,.notification-item span,.notification-item small{display:block}
+.notification-item span{font-size:.9rem;margin-top:4px}
+.notification-item small{font-size:.8rem;margin-top:6px}
+.notification-unread{border-left:5px solid #d40020;background:#fff0e9}
+@media(max-width:420px){.topbar .account{gap:9px}.notification-control summary{width:42px;height:44px}}
+@media(max-width:650px){.topbar .account:has(.notification-control:not([hidden])){display:grid;grid-template-columns:44px auto;gap:8px}.account:has(.notification-control:not([hidden])) .header-status{grid-column:1/-1;grid-row:1}.account:has(.notification-control:not([hidden])) .notification-control{grid-column:1;grid-row:2}.account:has(.notification-control:not([hidden])) #login-button{grid-column:2;grid-row:2}}

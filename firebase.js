@@ -57,11 +57,11 @@ export async function connect({ onState, onUser, onRole, onUsers, onConnection, 
       const role = snap.data()?.disabled?'guest':snap.data()?.role ?? 'guest';
       historyApproved=!!user&&!user.isAnonymous&&snap.exists()&&!snap.data()?.disabled&&['guest','player','admin','board'].includes(role);
       onRole(role,snap.data()?.teamId??'',snap.data()?.tournamentId??tournamentId); stopUsers();onUsers([]);onAccessPending?.(false);
-      if(!demoGate&&historyApproved&&user.isAnonymous===false&&!userLoginRecorded){userLoginRecorded=true;void recordOwnAppLogin().catch(onError);}
+      if(!demoGate&&historyApproved&&user.isAnonymous===false&&!userLoginRecorded){userLoginRecorded=true;void recordOwnAppLogin().then(recordOwnAppVisit).catch(onError);}
       if (!demoGate&&role==='board'){
-       let directory=[],activity=new Map();const emit=()=>onUsers(directory.map(u=>({...u,lastAppLoginAt:activity.get(u.uid)??null})));
+       let directory=[],activity=new Map();const emit=()=>onUsers(directory.map(u=>({...u,lastAppLoginAt:activity.get(u.uid)?.lastLoginAt??null,lastAppSeenAt:activity.get(u.uid)?.lastSeenAt??null})));
        const stopDirectory=api.onSnapshot(api.collection(db,'roles'),list=>{directory=list.docs.map(d=>({uid:d.id,...d.data()}));emit();},onError);
-       const stopActivity=api.onSnapshot(api.collection(db,'accountActivity'),list=>{activity=new Map(list.docs.map(d=>[d.id,d.data().lastLoginAt]));emit();},onError);
+       const stopActivity=api.onSnapshot(api.collection(db,'accountActivity'),list=>{activity=new Map(list.docs.map(d=>[d.id,d.data()]));emit();},onError);
        stopUsers=()=>{stopDirectory();stopActivity();};
       }
     }, error=>{onAccessPending?.(false);onError(error);});
@@ -74,7 +74,13 @@ export async function recordOwnAppLogin(){
  const token=await authApi.getIdTokenResult(current),seconds=Number(token.claims.auth_time);if(!Number.isSafeInteger(seconds)||seconds<=0)throw Error('Anmeldezeitpunkt konnte nicht ermittelt werden.');
  if(auth.currentUser?.uid!==current.uid)throw Error('Die Anmeldung wurde inzwischen gewechselt.');
  const ref=api.doc(db,'accountActivity',current.uid);
- await api.runTransaction(db,async tx=>{const previous=await tx.get(ref);if((previous.data()?.lastLoginAt??0)>=seconds)return;tx.set(ref,{lastLoginAt:seconds,updatedAt:api.serverTimestamp()});});
+ await api.runTransaction(db,async tx=>{const previous=await tx.get(ref);if((previous.data()?.lastLoginAt??0)>=seconds)return;tx.set(ref,{...previous.data(),lastLoginAt:seconds,updatedAt:api.serverTimestamp()});});
+}
+/** Ein Nutzungsnachweis pro angemeldetem Konto und Berliner Kalendertag, keine Gäste. */
+export async function recordOwnAppVisit(){
+ liveOnly();const current=auth?.currentUser;if(!current||current.isAnonymous)throw Error('Bitte zuerst anmelden.');const token=await authApi.getIdTokenResult(current),seconds=Number(token.claims.auth_time);if(!Number.isSafeInteger(seconds)||seconds<=0)throw Error('Anmeldezeit fehlt.');if(auth.currentUser?.uid!==current.uid)throw Error('Anmeldung gewechselt.');
+ const day=t=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(t)),ref=api.doc(db,'accountActivity',current.uid);
+ await api.runTransaction(db,async tx=>{const old=await tx.get(ref),last=old.data()?.lastSeenAt?.toMillis?.()??(old.data()?.lastSeenAt?.seconds??0)*1000;if(last&&day(last)===day(Date.now()))return;tx.set(ref,{...old.data(),lastLoginAt:old.data()?.lastLoginAt??seconds,lastSeenAt:api.serverTimestamp(),updatedAt:api.serverTimestamp()});});
 }
 export function selectTournament(id){
   liveOnly();
@@ -127,6 +133,19 @@ export async function listMemberships(){
   const [rows,reviews]=await Promise.all([api.getDocs(api.collection(db,'membershipApplications')),api.getDocs(api.collection(db,'membershipReviews'))]);
   const byId=new Map(reviews.docs.map(d=>[d.id,d.data()]));
   return rows.docs.map(d=>{const {pdf,...metadata}=d.data();return{id:d.id,...metadata,hasLegacyPDF:!!pdf,review:byId.get(d.id)??null};}).sort((a,b)=>(b.createdAt?.seconds??0)-(a.createdAt?.seconds??0));
+}
+/** Private Inbox: ausschließlich Vorstand, keine PDFs oder Antragsdaten in die UI-Meldungen übernehmen. */
+export async function watchNotificationInbox({tournamentIds=[],onItems,onError}){
+ await requireBoardAccount();tournamentIds=[...new Set(tournamentIds)];tournamentIds.forEach(checkRegistrationId);const values=new Map(),cancels=[],required=['applications','reviews',...tournamentIds.map(id=>'registrations:'+id)];
+ const publish=()=>{if(required.some(k=>!values.has(k)))return;const reviewed=new Set(values.get('reviews').map(r=>r.id));onItems([
+  ...values.get('applications').filter(a=>!reviewed.has(a.id)).map(a=>({id:'application:'+a.id,title:'Neuer Mitgliedsantrag',detail:'Mitgliedsantrag im Vorstand prüfen.',view:'applications',time:a.createdAt?.toMillis?.()??0})),
+  ...tournamentIds.flatMap(id=>values.get('registrations:'+id).map(r=>({id:'registration:'+id+':'+r.id,title:'Neue Turnieranmeldung',detail:r.teamName,view:'registrations',tournamentId:id,time:r.createdAt?.toMillis?.()??0})))
+ ]);};
+ const watch=(key,ref)=>cancels.push(api.onSnapshot(ref,s=>{values.set(key,s.docs.map(d=>({id:d.id,...d.data()})));publish();},onError));
+ watch('applications',api.query(api.collection(db,'membershipApplications'),api.orderBy('createdAt','desc'),api.limit(30)));
+ watch('reviews',api.collection(db,'membershipReviews'));
+ for(const id of tournamentIds){checkRegistrationId(id);watch('registrations:'+id,api.query(api.collection(db,'tournamentRegistrations',id,'entries'),api.orderBy('createdAt','desc'),api.limit(30)));}
+ return()=>cancels.forEach(cancel=>cancel());
 }
 export async function deleteMembership(id){await requireBoardAccount();await api.runTransaction(db,async tx=>{tx.delete(api.doc(db,'membershipApplications',id));tx.delete(api.doc(db,'membershipApplicationPDFs',id));});}
 
