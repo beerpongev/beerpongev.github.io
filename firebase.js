@@ -5,6 +5,7 @@ import { runStateTransaction } from './transaction.js';
 import {memberInvitationPlan,defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact,profileValues,normalizeProfileChange} from './registration.js';
 import {contributionReviewSnapshot,contributionFor,validYear,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
+import {cancelRegistrationTeam} from './team-transfer.js';
 
 export const firebaseProjectId=firebaseConfig.projectId;
 export const configured = firebaseConfig.apiKey !== 'HIER_EINTRAGEN' && firebaseConfig.projectId !== 'DEIN-PROJEKT';
@@ -259,6 +260,20 @@ export async function saveRegistration(id,input,{entryId,status='confirmed',sour
   if(!event.exists())throw Error('Bitte zuerst die Anmeldung einrichten.');const settings=event.data(),old=existing.exists()?existing.data():null;
   if(expectedUpdatedAt!==undefined&&(old?.updatedAt?.toMillis?.()??null)!==expectedUpdatedAt)throw Error('Die Anmeldung wurde inzwischen geändert. Bitte neu öffnen.');
   const row={...normalizeRegistration({...input,prices:input.prices??settings.prices},{board:true,allowMissingEmail:true}),owner:old?.owner??auth.currentUser.uid,status,sequence:old?.sequence??settings.nextSequence+1,source:old?.source??source,sourceDate:old?.sourceDate??sourceDate,consent:old?.consent??false,createdAt:old?.createdAt??api.serverTimestamp(),updatedAt:api.serverTimestamp()};
+  let cancelled=null,stateRef=null;
+  if(status==='cancelled')row.teamId=old?.teamId??'';
+  if(status==='cancelled'&&old?.teamId){
+   stateRef=api.doc(db,'tournaments',id);const [state,info]=await Promise.all([tx.get(stateRef),tx.get(api.doc(db,'tournamentCatalog',id))]);
+   cancelled=cancelRegistrationTeam(state.data()??null,old.teamId,{readOnly:!!info.data()?.archived||!!info.data()?.externalUrl});
+   if(cancelled.teamRemoval==='removed'){
+    // Die Abfrage wird bei jedem Transaktionsversuch wiederholt; alle normalen
+    // Zuordnungswege ändern zugleich den bereits gelesenen Spielplan/Eventstand.
+    const links=await api.getDocs(api.query(api.collection(db,'tournamentRegistrations',id,'entries'),api.where('teamId','==',old.teamId)));
+    const others=await Promise.all(links.docs.filter(d=>d.id!==key).map(d=>tx.get(entryRef(id,d.id))));
+    if(others.some(s=>s.exists()&&s.data().teamId===old.teamId&&s.data().status!=='cancelled'))cancelled={state:state.data(),teamRemoval:'shared'};
+   }
+   row.teamId=cancelled.teamRemoval==='retained'?old.teamId:'';
+  }
   const emails=new Set([...(old?.players??[]),...row.players].map(p=>p.email).filter(Boolean));
   const claims=await Promise.all([...emails].map(async email=>({email,ref:api.doc(db,'registrationClaims',id,'emails',email),snap:await tx.get(api.doc(db,'registrationClaims',id,'emails',email))})));
   if(!Array.isArray(contactEmailUpdates)||contactEmailUpdates.length>2||new Set(contactEmailUpdates.map(u=>u.memberId)).size!==contactEmailUpdates.length)throw Error('Bitte die Kontaktübernahmen prüfen.');
@@ -277,7 +292,8 @@ export async function saveRegistration(id,input,{entryId,status='confirmed',sour
    if(needed)tx.set(claim.ref,{entryId:key,owner:row.owner,createdAt:claim.snap.data()?.createdAt??api.serverTimestamp()});
    else if(claim.snap.data()?.entryId===key)tx.delete(claim.ref);
   }
-  tx.set(entryRef(id,key),row);tx.set(eventRef(id),{...reconcileSettings(settings,old,{...row,id:key}),updatedAt:api.serverTimestamp()});return{id:key,...row};
+  if(cancelled?.teamRemoval==='removed')tx.set(stateRef,{...cancelled.state,revision:cancelled.state.revision+1,updatedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});
+  tx.set(entryRef(id,key),row);tx.set(eventRef(id),{...reconcileSettings(settings,old,{...row,id:key}),updatedAt:api.serverTimestamp()});return{id:key,...row,...(cancelled?{teamRemoval:cancelled.teamRemoval}:{})};
  });
 }
 export async function listContributions(year){await requireBoardAccount();if(!validYear(year))throw Error('Ungültiges Beitragsjahr.');const s=await api.getDocs(api.collection(db,'memberContributions',String(year),'entries'));return s.docs.map(d=>({id:d.id,...d.data()}));}

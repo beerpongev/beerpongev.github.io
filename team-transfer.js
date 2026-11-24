@@ -1,3 +1,9 @@
+/** Absagen dürfen ausschließlich einen ungestarteten, leeren Spielplan verändern. */
+export function cancelRegistrationTeam(state,teamId,{readOnly=false}={}){
+ if(!teamId||!state?.teams?.some(t=>t.id===teamId))return{state,teamRemoval:'absent'};
+ if(readOnly||state.phase!=='setup'||Object.keys(state.matches??{}).length||Object.keys(state.results??{}).length)return{state,teamRemoval:'retained'};
+ return{state:{...state,teams:state.teams.filter(t=>t.id!==teamId)},teamRemoval:'removed'};
+}
 /** Abgleich vorhandener App-Konten; Login-Adresse und Mitgliedskontakt bleiben getrennt. */
 export function playerInvitationIssue(row){
  const players=row.players??[];

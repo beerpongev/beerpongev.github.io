@@ -3,7 +3,8 @@ import {reverseBankPayment} from './bank-corrections.js';
 import {defaultRegistrationSettings,normalizeMember,normalizeRegistration,reconcileSettings,validatePrivateImport,applicationMember,memberProfile,normalizeContact,normalizeProfileChange,profileValues} from './registration.js';
 import {contributionReviewSnapshot,contributionFor,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
-export function createDemoRegistry(){
+import {cancelRegistrationTeam} from './team-transfer.js';
+export function createDemoRegistry({getTournamentState=()=>null,saveTournamentState=()=>{}}={}){
  const contributions=new Map(),transactions=new Map(),listeners=new Set(),persons=new Map(),publicPlayers=new Map(),participations=new Map(),corrections=new Map(),debitExports=new Map();let clubSettings={};let sportArchives=[];
  const profileChanges=new Map();let deletedSequence=119;
  const events=new Map(),entries=new Map(),members=new Map(),applications=[{id:'demo-application',filename:'Demo-Antrag.pdf',data:{firstName:'Mika',lastName:'Beispiel',birthDate:'2000-01-02',email:'mika@example.test',phone:'0123456789',street:'Beispielweg 1',postalCode:'21423',city:'Musterstadt',occupation:'',bank:'Beispielbank',iban:'DE89370400440532013000',accountHolder:'',applicationPlace:'Musterstadt',applicationDate:'2026-11-17',debitPlace:'Musterstadt',debitDate:'2026-11-17'}}];
@@ -45,8 +46,14 @@ export function createDemoRegistry(){
    const s=getEvent(id),rows=entries.get(id),old=rows.find(r=>r.id===entryId),key=entryId??crypto.randomUUID();
    for(const update of contactEmailUpdates){const member=members.get(update.memberId),person=input.players.find(p=>p.memberId===update.memberId&&p.verified&&p.member);if(!member||!person||member.email!==update.expectedEmail)throw Error('Kontaktadresse wurde geändert. Bitte neu prüfen.');}
    const row={...normalizeRegistration({...input,prices:input.prices??s.prices},{board:true,allowMissingEmail:true}),id:key,status,sequence:old?.sequence??s.nextSequence+1,source:old?.source??source,sourceDate:old?.sourceDate??sourceDate,createdAt:old?.createdAt??Date.now(),updatedAt:Date.now()};
-   const settings=reconcileSettings(s,old,row);for(const update of contactEmailUpdates)members.get(update.memberId).email=input.players.find(p=>p.memberId===update.memberId).email;
-   events.set(id,settings);if(old)Object.assign(old,row);else rows.push(row);return copy(row);
+   let cancelled=status==='cancelled'&&old?.teamId?cancelRegistrationTeam(getTournamentState(id),old.teamId):null;
+   if(cancelled?.teamRemoval==='removed'&&rows.some(r=>r.id!==key&&r.teamId===old.teamId&&r.status!=='cancelled'))cancelled={state:cancelled.state,teamRemoval:'shared'};
+   if(status==='cancelled')row.teamId=old?.teamId??'';
+   if(cancelled)row.teamId=cancelled.teamRemoval==='retained'?old.teamId:'';
+   const settings=reconcileSettings(s,old,row);
+   if(cancelled?.teamRemoval==='removed')saveTournamentState(id,{...cancelled.state,revision:cancelled.state.revision+1,updatedBy:'demo',updatedAt:Date.now()});
+   for(const update of contactEmailUpdates)members.get(update.memberId).email=input.players.find(p=>p.memberId===update.memberId).email;
+   events.set(id,settings);if(old)Object.assign(old,row);else rows.push(row);return copy({...row,...(cancelled?{teamRemoval:cancelled.teamRemoval}:{})});
   },
   listMembers:async()=>copy([...members.values()]),
   watchContributions:async(year,callback)=>{const fn=()=>callback(copy([...contributions.values()].filter(r=>r.year===String(year))));listeners.add(fn);fn();return()=>listeners.delete(fn);},
