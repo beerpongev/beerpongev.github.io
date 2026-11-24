@@ -1,11 +1,21 @@
 import { escapeHTML as e, localDate } from './ui.js';
 import {annualFee} from './pricing.js';
-import { documentPages } from './documents.js';
+import { documentPages,bindDocumentSearch } from './documents.js';
 export const membershipRecipient='beerpongacademy@gmail.com';
 import {configured, saveMembershipPDF} from './firebase.js';
 
 const field=(label,name,type='text',attrs='required')=>`<label>${label}<input name="${name}" type="${type}" ${attrs} maxlength="${type==='email'?254:120}"></label>`;
+// Nur der erfolgreiche Abschluss bleibt für diese Seitensitzung im RAM, keine Antragsdaten.
+let submittedInSession=false;
+const successPanel=()=>`<section class="panel membership-panel membership-success" tabindex="-1"><p class="eyebrow">ERFOLGREICH ÜBERMITTELT</p><h3>Dein Mitgliedsantrag ist angekommen.</h3><p>Dein unterschriebener Antrag wurde geschützt gespeichert und liegt dem Vorstand zur Prüfung vor.</p><p><strong>Du musst den Antrag nicht erneut ausfüllen oder abschicken.</strong> Über deine Aufnahme entscheidet der Vorstand nach der Prüfung.</p><div class="admin-actions"><button class="button" data-view="home">Zur Startseite</button><button type="button" class="button light" id="membership-another-person">Antrag für eine weitere Person</button></div></section>`;
+function showSuccessDialog(){
+ const popup=document.createElement('dialog');popup.id='membership-success-dialog';popup.setAttribute('aria-labelledby','membership-success-title');popup.setAttribute('aria-describedby','membership-success-description');
+ popup.innerHTML='<div class="dialog-head"><h2 id="membership-success-title">Antrag erfolgreich übermittelt</h2></div><p id="membership-success-description">Dein unterschriebener Mitgliedsantrag wurde geschützt gespeichert und liegt dem Vorstand zur Prüfung vor.</p><p><strong>Bitte nicht erneut ausfüllen oder absenden.</strong> Die Entscheidung über deine Aufnahme folgt nach der Prüfung durch den Vorstand.</p><div class="dialog-actions"><button type="button" class="button red-button" autofocus>Verstanden</button></div>';
+ document.body.append(popup);popup.querySelector('button').onclick=()=>popup.close();popup.addEventListener('close',()=>{popup.remove();document.querySelector('.membership-success')?.focus({preventScroll:true});},{once:true});
+ if(typeof popup.showModal==='function')popup.showModal();else{popup.remove();window.alert('Dein Mitgliedsantrag wurde erfolgreich übermittelt und liegt dem Vorstand zur Prüfung vor. Bitte nicht erneut ausfüllen oder absenden.');}
+}
 export function membershipView() {
+  if(submittedInSession)return '<div id="membership-root">'+successPanel()+'</div>';
   const returned=false; // Kein externer Versanddienst mehr.
   return `<div id="membership-root"><div class="section-head"><div><p class="eyebrow">MEHR ALS EIN TURNIER</p><h2>Mitgliedschaft.</h2><p>Teil der Beerpong Academy e. V. werden.</p></div></div>${returned?'<div class="notice" role="status">Du bist von der Versandseite zurückgekehrt. Maßgeblich ist deren Versandbestätigung. Die Aufnahme wird anschließend vom Vereinsvorstand geprüft.</div>':''}
   <details class="panel"><summary>Satzung vom 29.12.2017 lesen und durchsuchen</summary><label class="document-search-label">Satzung durchsuchen<input id="document-search" type="search" placeholder="Suchbegriff …" maxlength="100"></label><div id="document-pages">${documentPages('statutes')}</div></details>
@@ -30,7 +40,9 @@ export function parseBirthDate(value){
   return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===iso?iso:null;
 }
 export function bindMembership({demo=false}={}) {
+  const another=document.querySelector('#membership-another-person');if(another)another.onclick=()=>{if(!confirm('Einen neuen Mitgliedsantrag für eine weitere Person beginnen? Dein bereits abgegebener Antrag bleibt gespeichert.'))return;submittedInSession=false;document.querySelector('#membership-root').outerHTML=membershipView();bindMembership({demo});bindDocumentSearch();};
   const form=document.querySelector('#membership-form');if(!form)return;
+  let submitting=false;
   const updateFee=()=>{const date=form.elements.namedItem('Gewünschtes Eintrittsdatum').value;const label=document.querySelector('#membership-fee');if(label)label.textContent=new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(annualFee(date.slice(0,4)||localDate().slice(0,4))/100)+' pro Jahr';};
   form.elements.namedItem('Gewünschtes Eintrittsdatum').addEventListener('change',updateFee);window.addEventListener('club-settings',()=>{if(form.isConnected)updateFee();},{once:true});updateFee();
   const upper=form.elements.namedItem('Antragsort'),lower=form.elements.namedItem('Ort der Einzugsermächtigung');
@@ -47,7 +59,7 @@ export function bindMembership({demo=false}={}) {
     document.querySelector(`[data-signature-clear="${id}"]`).addEventListener('click',clear);
   }
   form.addEventListener('submit',async event=>{
-    event.preventDefault();const error=document.querySelector('#membership-error');error.hidden=true;
+    event.preventDefault();if(submitting||submittedInSession)return;const error=form.querySelector('#membership-error');error.hidden=true;
     const fail=message=>{error.textContent=message;error.hidden=false;error.scrollIntoView({block:'center'});};
     if(!navigator.onLine)return fail('Zum Absenden wird eine Internetverbindung benötigt.');
     if(!form.reportValidity())return;
@@ -56,7 +68,7 @@ export function bindMembership({demo=false}={}) {
     if(!Number.isFinite(birth.getTime())||age<16||age>120)return fail('Gemäß der bereitgestellten Satzung ist eine Mitgliedschaft ab 16 Jahren vorgesehen. Bitte das Geburtsdatum prüfen.');
     const iban=document.querySelector('#membership-iban');if(!validIBAN(iban.value))return fail('Bitte eine gültige IBAN mit korrekter Prüfziffer eingeben.');iban.value=iban.value.replace(/\s/g,'').toUpperCase();
     if(!signed.application||!signed.debit)return fail('Bitte den Mitgliedsantrag und die Einzugsermächtigung jeweils im vorgesehenen Feld unterschreiben.');
-    const button=form.querySelector('button[type=submit]');button.disabled=true;
+    const button=form.querySelector('button[type=submit]');submitting=true;button.disabled=true;button.textContent='Antrag wird übermittelt …';form.setAttribute('aria-busy','true');
     try{
       if(demo||!configured)throw new Error('In der Demo werden keine Mitgliedsanträge gespeichert.');
       const f=new FormData(form),get=k=>String(f.get(k)??'').trim();
@@ -65,9 +77,10 @@ export function bindMembership({demo=false}={}) {
       const {createMembershipPDF,membershipFilename}=await import('./membership-pdf.js');
       const bytes=await createMembershipPDF(data,signatures);
       await saveMembershipPDF(bytes,membershipFilename(data),data);
-      form.reset();form.querySelectorAll('[data-signature-clear]').forEach(x=>x.click());manual=false;
-      document.querySelector('#membership-status').textContent='Dein Antrag wurde gespeichert und liegt dem Vorstand zur Bearbeitung vor.';
+      submittedInSession=true;
+      if(form.isConnected){const panel=form.closest('.membership-panel');panel.outerHTML=successPanel();bindMembership({demo});document.querySelector('.membership-success')?.scrollIntoView({block:'start',behavior:'instant'});}
+      showSuccessDialog();
     }catch(error){fail(error.code==='auth/operation-not-allowed'?'Die anonyme Anmeldung muss in Firebase aktiviert werden. Bitte die Spielleitung informieren.':error.message||'Speichern fehlgeschlagen. Bitte erneut versuchen.');}
-    finally{button.disabled=false;}
+    finally{submitting=false;if(!submittedInSession){button.disabled=false;button.textContent='Mitgliedsantrag geschützt abgeben';form.removeAttribute('aria-busy');}}
   });
 }
