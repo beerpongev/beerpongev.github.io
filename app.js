@@ -25,6 +25,16 @@ const stateCacheKey=()=>selectedTournamentId==='main'?cloud.liveCacheKey:cloud.l
 let demo=localDemo,demoAuthorized=false,demoGateError='',demoAccessRole='guest';
 let state=null,role='guest',teamId='',user=null,users=[],synced=false,busy=false;
 let accessPending=!localDemo,accessError='';
+let ownMembership=false,membershipWatchKey='',stopMembership=()=>{};
+function syncOwnMembership(){
+ const key=!demo&&!onlineDemoRequested&&canHistory()?user.uid:'';if(key===membershipWatchKey)return;
+ stopMembership();stopMembership=()=>{};membershipWatchKey=key;ownMembership=false;
+ if(key)stopMembership=cloud.watchMyMembership(active=>{if(membershipWatchKey!==key)return;ownMembership=active;renderMembershipNavigation();});
+}
+function renderMembershipNavigation(){
+ $('#membership-tab').hidden=board()||ownMembership;
+ $('#members-tab').hidden=!board();
+}
 const routeNames={home:'startseite',tournaments:'turniere',overview:'turnier',groups:'gruppen',bracket:'ko',teams:'teams',rules:'regelwerk',membership:'mitgliedschaft',admin:'spielleitung',board:'vorstand',accounts:'benutzerkonten',registration:'anmeldung',registrations:'anmeldungen-verwalten',members:'mitglieder-verwalten',applications:'antraege',profile:'meine-daten',games:'ergebnisse',history:'historie',people:'personen',imprint:'impressum',privacy:'datenschutz'};
 function routeView(){return Object.keys(routeNames).find(k=>routeNames[k]===new URL(location.href).searchParams.get('bereich'))??(new URL(location.href).searchParams.has('turnier')?'overview':'home');}
 let view=routeView();
@@ -136,6 +146,7 @@ async function chooseTournament(id,keepBoard=false){
 function renderTournamentNavigation(){
   const show=['overview','groups','bracket','teams','admin','board','registrations','games'].includes(view),meta=currentTournament();
   $('#tournament-context').hidden=!show;$('#tournament-navigation').hidden=!show||['board','registrations'].includes(view);
+  $('#tournament-context').classList.toggle('compact-tournament-context',view==='registrations');
   $('#archive-games-tab').hidden=!meta?.externalUrl;$('#tournament-navigation').classList.toggle('has-archive-results',!!meta?.externalUrl);
   if(!show)return;
   $('#tournament-context').innerHTML='<div><p class="eyebrow">'+(meta?.archived?'TURNIERARCHIV':'AUSGEWÄHLTES TURNIER')+'</p><h2>'+e(meta?.title??'Turnier')+'</h2><p class="legend">'+(meta?e(tournamentDate(meta))+' · '+e(meta.venue):'')+'</p></div>';
@@ -191,6 +202,7 @@ function renderDemoGate(){
 }
 function updateDemoToolbarHeight(){const banner=$('#mode-banner');document.body.style.setProperty('--demo-toolbar-height',onlineDemoRequested&&demoAuthorized?`${Math.ceil(banner.getBoundingClientRect().height)}px`:'0px');}
 function render(force=false){
+  syncOwnMembership();renderMembershipNavigation();
   notifications.update();
   const identity=(user?.uid??'')+'|'+role+'|'+demo;
   if(identity!==clubRenderIdentity){accountSearch='';accountFilter='all';selectedAccounts.clear();clubRenderIdentity=identity;clubAdministration.clear();if($('#club-feature-root'))$('#main').replaceChildren();force=true;}
@@ -246,7 +258,7 @@ function render(force=false){
   if(view==='imprint'||view==='privacy'){$('#main').innerHTML=legalView(view,clubSettings);return;}
   if(['applications','profile'].includes(view)){$('#main').innerHTML='<div id="member-workflow-root"></div>';view==='applications'?void memberWorkflows.mountApplications():memberWorkflows.mountProfile();return;}
   if(view==='registration'){$('#main').innerHTML=registrationView(currentTournament(),registrationEvent(selectedTournamentId),{demo});bindRegistration({submit:data=>(demo?demoRegistry:cloud).submitRegistration(selectedTournamentId,data),afterSubmit:()=>render()});return;}
-  if(['registrations','members'].includes(view)){$('#main').innerHTML=`<div class="section-head"><div><p class="eyebrow">GESCHÜTZTE VEREINSVERWALTUNG</p><h2>${view==='members'?'Mitglieder.':'Turnieranmeldungen.'}</h2></div></div><div id="registry-management"></div>`;void registryManagement.mount(view,selectedTournamentId);return;}
+  if(['registrations','members'].includes(view)){$('#main').innerHTML=`<div class="section-head registry-heading"><div><h2>${view==='members'?'Mitglieder.':'Turnieranmeldungen.'}</h2></div></div><div id="registry-management"></div>`;void registryManagement.mount(view,selectedTournamentId);return;}
   const meta=currentTournament();
   if(!meta){$('#main').innerHTML=`<section class="empty"><h2>${catalogLoaded?'Turnier nicht gefunden.':'Turniere werden geladen …'}</h2><button class="button light" data-view="tournaments">Zur Turnierübersicht</button></section>`;return;}
   if(meta.externalUrl){$('#main').innerHTML=externalArchiveView(meta,view);if(view==='games')bindArchiveGames(meta);return;}

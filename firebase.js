@@ -136,16 +136,18 @@ export async function listMemberships(){
 }
 /** Private Inbox: ausschließlich Vorstand, keine PDFs oder Antragsdaten in die UI-Meldungen übernehmen. */
 export async function watchNotificationInbox({tournamentIds=[],onItems,onError}){
- await requireBoardAccount();tournamentIds=[...new Set(tournamentIds)];tournamentIds.forEach(checkRegistrationId);const values=new Map(),cancels=[],required=['applications','reviews',...tournamentIds.map(id=>'registrations:'+id)];
- const publish=()=>{if(required.some(k=>!values.has(k)))return;const reviewed=new Set(values.get('reviews').map(r=>r.id));onItems([
+ await requireBoardAccount();tournamentIds=[...new Set(tournamentIds)];tournamentIds.forEach(checkRegistrationId);const values=new Map(),cancels=[],required=['applications','reviews','profile-changes',...tournamentIds.map(id=>'registrations:'+id)];let watching=true;
+ const publish=()=>{if(!watching||required.some(k=>!values.has(k)))return;const reviewed=new Set(values.get('reviews').map(r=>r.id));onItems([
   ...values.get('applications').filter(a=>!reviewed.has(a.id)).map(a=>({id:'application:'+a.id,title:'Neuer Mitgliedsantrag',detail:'Mitgliedsantrag im Vorstand prüfen.',view:'applications',time:a.createdAt?.toMillis?.()??0})),
+  ...values.get('profile-changes').filter(r=>r.status==='pending').map(r=>{const time=r.submittedAt?.toMillis?.()??(r.submittedAt?.seconds??0)*1000;return{id:'profile-change:'+r.id+':'+time,title:'Neue Datenänderung',detail:'Ein Mitglied hat seine Daten geändert. Bitte zur Freigabe prüfen.',view:'applications',time};}),
   ...tournamentIds.flatMap(id=>values.get('registrations:'+id).map(r=>({id:'registration:'+id+':'+r.id,title:'Neue Turnieranmeldung',detail:r.teamName,view:'registrations',tournamentId:id,time:r.createdAt?.toMillis?.()??0})))
  ]);};
  const watch=(key,ref)=>cancels.push(api.onSnapshot(ref,s=>{values.set(key,s.docs.map(d=>({id:d.id,...d.data()})));publish();},onError));
  watch('applications',api.query(api.collection(db,'membershipApplications'),api.orderBy('createdAt','desc'),api.limit(30)));
  watch('reviews',api.collection(db,'membershipReviews'));
+ watch('profile-changes',api.query(api.collection(db,'memberProfileChanges'),api.where('status','==','pending')));
  for(const id of tournamentIds){checkRegistrationId(id);watch('registrations:'+id,api.query(api.collection(db,'tournamentRegistrations',id,'entries'),api.orderBy('createdAt','desc'),api.limit(30)));}
- return()=>cancels.forEach(cancel=>cancel());
+ return()=>{watching=false;cancels.forEach(cancel=>cancel());};
 }
 export async function deleteMembership(id){await requireBoardAccount();await api.runTransaction(db,async tx=>{tx.delete(api.doc(db,'membershipApplications',id));tx.delete(api.doc(db,'membershipApplicationPDFs',id));});}
 
@@ -424,6 +426,12 @@ export async function linkMemberAccount(memberId,uid){
   tx.set(ref,{...next,updatedAt:api.serverTimestamp()});if(profileRef)tx.set(profileRef,{...memberProfile({id:memberId,...next},(profile?.data()?.revision??-1)+1),updatedAt:api.serverTimestamp()});
  });
  if(uid)await syncMemberParticipationAccount(memberId,uid);
+}
+/** Für die Navigation nur den aktiven Status des eigenen verknüpften Profils weitergeben. */
+export function watchMyMembership(onActive,onError){
+ liveOnly();const user=auth?.currentUser;if(!historyApproved||!user||user.isAnonymous){onActive(false);return()=>{};}
+ let watching=true;const stop=api.onSnapshot(api.doc(db,'memberProfiles',user.uid),s=>{if(watching&&auth.currentUser?.uid===user.uid)onActive(s.exists()&&s.data()?.active===true);},error=>{if(watching&&auth.currentUser?.uid===user.uid){onActive(false);onError?.(error);}});
+ return()=>{watching=false;stop();};
 }
 /** Eigenes Profil enthält nur eigene Stammdaten, keine Beiträge oder Vorstandsnotizen. */
 export function watchMyProfile(onProfile,onError){

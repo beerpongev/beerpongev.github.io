@@ -1,4 +1,65 @@
 /* Anmeldung und private Vereinsverwaltung: große Touchflächen, flexible Karten. */
+/* Anmeldungen stehen vor Verwaltungseinstellungen und Erläuterungen. */
+.registry-heading.section-head{margin-bottom:12px}
+.tournament-context.compact-tournament-context{margin-block:12px 0;padding-bottom:8px}
+.compact-tournament-context>div{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 14px}
+.compact-tournament-context .eyebrow{display:none}
+.compact-tournament-context h2{font-size:.9rem;letter-spacing:0;margin:0}
+.compact-tournament-context .legend{margin:0;font-size:.75rem}
+.registration-management .registry-toolbar{gap:8px 16px;margin-bottom:16px;align-items:center}
+.registration-management .registry-toolbar>*{flex:0 1 auto;min-width:0}
+.registration-management .registry-toolbar .text-button{min-height:44px;padding:8px 2px}
+.registration-management .registry-toolbar [data-registry=new]{margin-left:auto}
+.registration-management .registry-toolbar .button{padding:10px 14px;font-size:.8rem;min-height:44px}
+.registration-filters{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+.registration-management .registration-filters .registry-search{margin:0;min-width:0;font-size:.85rem}
+.registration-management .registry-transfer-summary{display:flex;flex-wrap:wrap;gap:6px 18px;margin:14px 0 0;padding:0;font-size:.8rem;color:var(--muted)}
+.registration-count-open{color:#9f1020}
+.registration-management .registry-status-group{margin:16px 0}
+.registration-management .registry-status-group>h3{font-size:1rem;margin:0 0 12px}
+.registration-management .registry-status-group>.registry-card:first-of-type{margin-top:0}
+.registration-tools{margin-top:28px;padding:12px 18px}
+.registration-tools>summary{font-weight:750}
+.registration-tools-content{padding-top:8px;overflow-wrap:anywhere}
+.registration-tools-content .checkbox-label{align-items:flex-start;font-size:.85rem}
+.registration-tools-content .checkbox-label input{flex-shrink:0;width:24px;height:24px;margin:0}
+.registration-tools-content h3{font-size:1rem}
+.registration-tools-content .registry-settings{margin:0 0 16px;padding:12px 16px}
+.registration-tools-content .registry-settings>summary{font-size:.85rem}
+.registration-help p{font-size:.85rem}
+.registration-tools [hidden]{display:none}
+.registration-demo-note{margin:0 0 12px}
+@media(min-width:700px){.registration-filters{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}}
+@media(max-width:500px){.registration-management .registry-toolbar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px}.registration-management .registry-toolbar [data-registry=new]{margin-left:0}.registration-management .registry-toolbar .text-button{text-align:left}.registration-management .registry-toolbar .button{padding:10px 8px}.registration-tools{padding:10px 12px}}
+/* Mitglieder: Liste und laufende Abrechnung statt einmaliger Importwerkzeuge. */
+.member-management .registry-toolbar{gap:8px 16px;margin-bottom:12px;align-items:center}
+.member-management .registry-toolbar>*{flex:0 1 auto;min-width:0}
+.member-management .registry-toolbar .text-button{min-height:44px;padding:8px 2px}
+.member-management .registry-toolbar [data-registry=new]{margin-left:auto;padding:10px 14px;font-size:.8rem}
+.member-view-tabs{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 16px;border-bottom:1px solid var(--line);padding-bottom:10px}
+.member-view-tabs .button{padding:8px 12px;min-height:44px;font-size:.8rem}
+.member-view-tabs [aria-pressed=true]{background:var(--navy);color:var(--cream);border-color:var(--navy)}
+.member-view-tabs .text-button{font-size:.8rem;margin-left:auto;min-height:44px}
+.member-management .registry-search{margin:0 0 12px;font-size:.85rem}
+.member-management .member-filters{margin:0 0 12px;gap:10px}
+.member-management.member-directory .member-filters{grid-template-columns:1fr}
+.member-management #member-extra-filters{margin:0 0 12px}
+.member-management #member-extra-filters>summary{font-size:.8rem}
+.member-extra-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:8px 0}
+.member-extra-grid label{min-width:0;font-size:.85rem;font-weight:700}
+.member-extra-grid select{display:block;width:100%;min-width:0;margin-top:8px}
+.member-management .contribution-tools{margin-top:24px}
+.member-management.member-directory .contribution-summary{display:flex;flex-wrap:wrap;gap:8px 20px;margin:14px 0}
+.member-management.member-directory .contribution-summary>div{padding:0;background:none;border:0;border-radius:0}
+.member-management.member-directory .contribution-summary b{display:inline;font-size:1rem;margin-right:5px}
+.member-management.member-directory .contribution-summary span{display:inline;font-size:.8rem}
+.member-management.member-directory .member-select,.member-management.member-directory .member-list-head>div:first-child{display:none}
+.member-management.member-directory .member-list-row,.member-management.member-directory .member-list-head{grid-template-columns:1fr}
+.member-management.member-directory .member-list-row>div{grid-column:auto;grid-row:auto}
+.member-management [hidden]{display:none}
+@media(min-width:1100px){.member-management.member-directory .member-list-row,.member-management.member-directory .member-list-head{grid-template-columns:minmax(0,1.2fr) minmax(0,1.4fr) minmax(150px,.8fr)}}
+@media(min-width:700px){.member-extra-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.member-management.member-directory #registry-config{display:grid;grid-template-columns:minmax(0,2fr) minmax(180px,1fr);gap:0 14px}.member-management.member-directory .member-view-tabs,.member-management.member-directory #member-extra-filters{grid-column:1/-1}}
+@media(max-width:500px){.member-management .registry-toolbar{gap:6px 12px}.member-management .registry-toolbar [data-registry=new]{margin-left:0}.member-management .member-view-tabs .button{flex:1}.member-management .member-view-tabs .text-button{margin-left:0}.member-management .member-filters>label:last-child{grid-column:auto}}
 .registration-teaser{border-top:1px solid #ffffff35;border-bottom:1px solid #ffffff35;padding:16px 0;margin:22px 0}.registration-teaser p{font-size:.9rem;margin:0 0 10px}.registration-teaser .button{width:100%;margin-top:6px}.registration-page{max-width:850px;margin:24px auto}.registration-page>h2{font-size:clamp(2rem,6vw,3rem)}.registration-page #registration-availability{background:var(--navy);color:var(--cream);padding:8px 22px;border-radius:var(--radius);margin:25px 0}.registration-page .registration-teaser{border:0;margin:0}.registry-form fieldset{border:0;border-top:1px solid var(--line);padding:25px 0 10px;margin:24px 0 5px;min-width:0}.registry-form legend{font-weight:800;font-size:1.1rem;padding-right:15px}.registry-form>label,.registry-editor label{display:block;margin:16px 0}.registry-form select,.registry-editor select{width:100%;min-width:0}.registration-costs{padding:20px;background:#eee9d9;border-radius:12px;margin:24px 0}.registration-costs h3{margin:0 0 12px}.fee-breakdown{margin:0}.fee-breakdown>div{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:10px 0}.fee-breakdown dd{font-weight:700;white-space:nowrap;margin:0}.fee-breakdown dt{min-width:0}.fee-breakdown .fee-total{border-top:1px solid #011e3530;padding-top:14px;margin-top:14px;font-weight:800}.fee-total dd{font-size:1.5rem}.registry-form .checkbox-label,.registry-editor .checkbox-label{display:flex;align-items:flex-start;gap:12px;line-height:1.6}.registry-form .checkbox-label input,.registry-editor .checkbox-label input{flex-shrink:0;margin-top:3px}.registry-form>button[type=submit]{width:100%;margin-top:20px}.registration-success h3{font-size:1.5rem;margin-top:20px}.registry-toolbar{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}.registry-toolbar>*{flex:1;min-width:160px}.registry-settings,.private-import,.registry-editor{margin:20px 0}.registry-settings form{display:grid;gap:16px}.registry-settings form>button{align-self:end}.registry-settings input[type=number]{max-width:200px}.private-import summary{font-weight:700;cursor:pointer;padding:5px;min-height:40px}.private-import input{width:100%;min-width:0;margin-block:15px}.registry-search{display:block;margin:25px 0}.registry-status-group{margin:30px 0}.registry-cards{display:grid;gap:15px}.registry-card{margin:15px 0;padding:22px;min-width:0}.registry-card h3,.registry-card h4{font-size:1.1rem;margin:12px 0}.registry-card p{margin:10px 0}.registry-row{display:flex;align-items:start;justify-content:space-between;gap:16px;flex-wrap:wrap}.registry-row>div{min-width:0}.registry-row>b{font-size:1.3rem;white-space:nowrap}.registry-people{display:grid;gap:10px}.registry-note{border-left:3px solid var(--red);padding-left:12px;font-size:.85rem}.registry-card :is(p,h3,h4,.legend){overflow-wrap:anywhere}.registry-editor textarea{width:100%;min-height:90px;resize:vertical;padding:12px;color:var(--navy);background:var(--white);border:1px solid var(--line);border-radius:8px;font:inherit}.registry-editor fieldset{border:0;border-top:1px solid var(--line);margin:25px 0 10px;padding:16px 0;min-width:0}.registry-editor legend{font-weight:800;padding-right:12px}.registry-busy :is(button,input,select,textarea){pointer-events:none;opacity:.65}.registry-busy [data-view]{pointer-events:none}.registry-busy{cursor:progress}.registry-error{margin-block:20px}.registry-card .admin-actions{gap:12px}.registry-card .text-button{min-height:44px}
 .fee-year{border-left:7px solid transparent;padding-left:12px;min-width:0}.registry-form label>input:not([type=checkbox]),.registry-editor label>input:not([type=checkbox]),.registry-search>input,.registry-search>select{display:block;width:100%;margin-top:8px}.registry-form label:not(.checkbox-label),.registry-editor label:not(.checkbox-label){font-weight:700}.registry-form label>select,.registry-editor label>select{display:block;margin-top:8px}.registry-form .notice,.registry-form .legend{font-weight:400}
 @media(min-width:700px){.registry-people{grid-template-columns:1fr 1fr}.registry-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.registry-settings form{grid-template-columns:160px minmax(0,1fr) auto}.registry-settings .checkbox-label{align-self:center}.registration-teaser .button{width:auto;min-width:240px}}
