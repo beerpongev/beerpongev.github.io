@@ -77,6 +77,7 @@ export function membershipReviewSignature(person,members){
  return members.filter(m=>m.active&&((person.email&&m.email&&m.email.toLowerCase()===person.email.toLowerCase())||nameKey(fullName(m))===nameKey(fullName(person)))).map(m=>m.id).sort().join('|');
 }
 export function needsMembershipReview(person,members){
+ if(person.member===false)return false;
  if(!person.verified)return true;
  if(person.member)return !person.memberId||!members.some(m=>m.id===person.memberId&&m.active);
  return membershipReviewSignature(person,members)!==(person.membershipFingerprint??'');

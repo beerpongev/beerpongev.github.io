@@ -23,6 +23,20 @@ export function legacyContribution(member,year){
  return{memberId:member.id,year:String(year),dueCents:['notdue','waived'].includes(status)?0:fee,paidCents:status==='paid'?Math.max(fee,amount??0):0,status,method:has?'excel':'manual',date:'',note:has?`Excel: ${value||'leer'}${color?' · '+color:''}`:'',revision:-1,legacy:has,value,color};
 }
 export function contributionFor(member,year,entries=[]){return entries.find(r=>r.memberId===member.id)??legacyContribution(member,year);}
+export function memberContributionYears(member,stored=[],selected=currentFeeYear()){
+ const years=new Set([...Object.keys(member.feeHistory??{}),...Object.keys(member.feeColors??{}),...stored.map(c=>c.year),String(selected),currentFeeYear()].filter(validYear)),joined=joinedDate(member.joined);
+ if(joined)for(let y=Math.max(2000,+joined.slice(0,4));y<=+currentFeeYear();y++)years.add(String(y));
+ return [...years].sort((a,b)=>+b-+a);
+}
+/** Normaler Zahlungsstatus folgt Beträgen; Sonderfälle bleiben bei offenem Rest erhalten. */
+export function contributionPaymentDraft(input,mode='auto'){
+ if(!Number.isInteger(input.dueCents)||!Number.isInteger(input.paidCents))throw Error('Bitte vollständige Beträge eingeben.');
+ const {dueCents,paidCents}=input;let status;
+ if(dueCents===0&&paidCents===0)status=mode==='notdue'?'notdue':'waived';
+ else if(dueCents>0&&paidCents>=dueCents)status='paid';
+ else status=['pending','returned','review'].includes(mode)?mode:'open';
+ return normalizeContribution({...input,status});
+}
 export const REVIEW_COLUMNS=['Format','Mitglied-ID','Mitgliedsnummer','Vorname','Nachname','Beitragsjahr','Status bisher','Soll EUR','Bezahlt bisher EUR','Offen EUR','Excel-Original','Excel-Farbe','Neuer Status','Bezahlt EUR','Zahlungsdatum','Zahlungsart','Neue Notiz','Pruefstand'];
 const reviewAmount=cents=>(cents/100).toFixed(2).replace('.',',');
 const reviewSafe=value=>/^[=+\-@'\t\r]/.test(String(value??''))?"'"+value:String(value??'');

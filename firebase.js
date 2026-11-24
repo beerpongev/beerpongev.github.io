@@ -279,6 +279,21 @@ export async function saveRegistration(id,input,{entryId,status='confirmed',sour
  });
 }
 export async function listContributions(year){await requireBoardAccount();if(!validYear(year))throw Error('Ungültiges Beitragsjahr.');const s=await api.getDocs(api.collection(db,'memberContributions',String(year),'entries'));return s.docs.map(d=>({id:d.id,...d.data()}));}
+/** Direkte Dokumentabrufe finden auch alte Jahre ohne angelegtes Eltern-Dokument. */
+export async function listMemberContributions(memberId){
+ await requireBoardAccount();contributionRef(memberId,'2000');
+ const snapshots=await Promise.all(Array.from({length:100},(_,i)=>api.getDoc(contributionRef(memberId,String(2000+i)))));
+ return snapshots.flatMap((s,i)=>s.exists()?[{...s.data(),memberId,year:String(2000+i)}]:[]);
+}
+/** Alle geänderten Jahre gemeinsam prüfen und atomar speichern: kein halber Zwischenstand. */
+export async function saveMemberContributions(memberId,updates){
+ await requireBoardAccount();if(!Array.isArray(updates)||!updates.length||updates.length>100||new Set(updates.map(r=>String(r.year))).size!==updates.length)throw Error('Bitte eindeutige Beitragsjahre auswählen.');
+ const rows=updates.map(row=>({ref:contributionRef(memberId,row.year),year:String(row.year),data:normalizeContribution(row.data),snapshot:row.snapshot}));
+ return api.runTransaction(db,async tx=>{const [member,previous]=await Promise.all([tx.get(api.doc(db,'members',memberId)),Promise.all(rows.map(r=>tx.get(r.ref)))]);if(!member.exists())throw Error('Das Mitglied ist nicht mehr vorhanden.');
+  const m={id:memberId,...member.data()};for(const [i,row]of rows.entries()){const c=contributionFor(m,row.year,previous[i].exists()?[previous[i].data()]:[]);if(contributionReviewSnapshot(m,c)!==row.snapshot)throw Error('Beitrag '+row.year+' oder Mitglied wurde inzwischen geändert. Es wurde nichts gespeichert. Bitte neu öffnen und prüfen.');}
+  for(const [i,row]of rows.entries())tx.set(row.ref,{...row.data,memberId,year:row.year,revision:(previous[i].data()?.revision??-1)+1,updatedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});return rows.length;
+ });
+}
 export async function listMembers(){await requireBoardAccount();const snapshot=await api.getDocs(api.collection(db,'members'));return snapshot.docs.map(d=>({id:d.id,...d.data()}));}
 function contributionRef(memberId,year){if(!validYear(year)||!/^[a-zA-Z0-9_-]{1,128}$/.test(memberId))throw Error('Ungültige Mitglieds-ID oder Beitragsjahr.');return api.doc(db,'memberContributions',String(year),'entries',memberId);}
 export async function watchContributions(year,onRows,onError){await requireBoardAccount();if(!validYear(year))throw Error('Ungültiges Beitragsjahr.');return api.onSnapshot(api.collection(db,'memberContributions',String(year),'entries'),s=>onRows(s.docs.map(d=>({id:d.id,...d.data()}))),onError);}
