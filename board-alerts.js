@@ -11,11 +11,11 @@ export function cancellationPaymentReview(row,expectedPaidCents,note){
 export function boardInvitationIssues({members=[],accounts=[],memberInvitations=[],groups=[]}={}){
  accounts=accounts??[];
  const known=(address,uid)=>accounts.some(a=>!a.disabled&&(uid?a.uid===uid:email(a.email)===email(address)));
- const memberIssues=memberInvitations.filter(r=>r.status==='review').flatMap(r=>{const m=members.find(m=>m.id===r.id);return !m||known('',m.accountUid||'@missing')?[]:[{id:'member:'+r.id,kind:'member',memberId:m.id,name:m.firstName+' '+m.lastName,email:r.email,error:r.message||'Kontoeinrichtung oder Einladung prüfen.',time:time(r.updatedAt),view:'accounts'}];});
+ const memberIssues=memberInvitations.filter(r=>r.status==='review').flatMap(r=>{const m=members.find(m=>m.id===r.id);return !m||(known('',m.accountUid||'@missing')&&!r.retryCount)?[]:[{id:'member:'+r.id,recordId:r.id,kind:'member',memberId:m.id,name:m.firstName+' '+m.lastName,email:r.email,error:r.message||'Kontoeinrichtung oder Einladung prüfen.',time:time(r.updatedAt),view:'accounts'}];});
  return [...memberIssues,...groups.flatMap(group=>(group.invitations??[]).filter(r=>r.status==='review').flatMap(r=>{
   const row=group.rows.find(e=>e.id===r.entryId),p=row?.players?.[r.slot-1],m=p?.memberId?members.find(m=>m.id===p.memberId):null;
-  if(!row||row.status==='cancelled'||!p||email(p.email)!==email(r.email)||known(r.email)||m?.accountUid&&known('',m.accountUid))return[];
-  return[{id:'player:'+group.id+':'+r.id,kind:'player',tournamentId:group.id,entryId:row.id,name:row.teamName,email:r.email,error:r.error||'Kontoeinrichtung oder Einladung prüfen.',time:time(r.updatedAt),view:'registrations',filter:'invitation-review'}];
+  if(!row||row.status==='cancelled'||!p||email(p.email)!==email(r.email)||(!r.retryCount&&(known(r.email)||m?.accountUid&&known('',m.accountUid))))return[];
+  return[{id:'player:'+group.id+':'+r.id,recordId:r.id,slot:r.slot,kind:'player',tournamentId:group.id,entryId:row.id,name:row.teamName,email:r.email,error:r.error||'Kontoeinrichtung oder Einladung prüfen.',time:time(r.updatedAt),view:'registrations',filter:'invitation-review'}];
  }))].sort((a,b)=>b.time-a.time);
 }
 export function boardRegistrationNotifications(rows,state,tournamentId){

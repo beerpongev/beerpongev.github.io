@@ -60,6 +60,18 @@ export function createDemoRegistry({getTournamentState=()=>null,saveTournamentSt
    events.set(id,settings);if(old)Object.assign(old,row);else rows.push(row);return copy({...row,...(cancelled?{teamRemoval:cancelled.teamRemoval}:{})});
   },
   listMembers:async()=>copy([...members.values()]),
+  previewInvitationRetry:async issue=>{
+   const target=issue.kind==='member'?members.get(issue.memberId):(entries.get(issue.tournamentId)??[]).find(r=>r.id===issue.entryId),p=issue.kind==='member'?target:target?.players?.[issue.slot-1];
+   if(!p||issue.kind==='member'&&!target.active||issue.kind==='player'&&target.status!=='confirmed')throw Error('Demo: Person bitte prüfen.');
+   const account=[...invitationAccounts.values()].find(a=>a.uid===p.accountUid||a.email===p.email),uid=p.accountUid||account?.uid||'',snapshot=JSON.stringify([issue.kind,p.email,uid]);
+   return{name:p.firstName+' '+p.lastName,email:account?.email||p.email,uid,action:uid?'link':'invite',snapshot};
+  },
+  retryInvitation:async(issue,{expectedSnapshot}={})=>{
+   const plan=await api.previewInvitationRetry(issue);if(plan.snapshot!==expectedSnapshot)throw Error('Demo: Vorschau geändert.');
+   const uid=plan.uid||'demo-retry-'+crypto.randomUUID();invitationAccounts.set(uid,{uid,email:plan.email,name:plan.name,role:issue.kind==='member'?'guest':'player'});
+   if(issue.kind==='member'){members.get(issue.memberId).accountUid=uid;invitationLogs.set(issue.memberId,{id:issue.memberId,status:'sent',uid,email:plan.email});}
+   return{uid,sent:!plan.uid,notice:plan.uid?'DEMO · Vorhandenes Konto ohne Mail verknüpft.':'DEMO · Einladung simuliert. Keine echte E-Mail verschickt.'};
+  },
   listBoardInvitationIssues:async(ids=['main'])=>boardInvitationIssues({members:[...members.values()],accounts:[...invitationAccounts.values()],memberInvitations:[...invitationLogs.values()],groups:ids.map(id=>({id,rows:entries.get(id)??[],invitations:[]}))}),
   reviewCancellationPayment:async(id,entryId,{paidCents,note})=>{const row=(entries.get(id)??[]).find(r=>r.id===entryId);row.paymentReview={...cancellationPaymentReview(row,paidCents,note),reviewedBy:'demo',reviewedAt:Date.now()};row.updatedAt=Date.now();},
   previewMemberInvitations:async()=>{

@@ -5,7 +5,7 @@ import { runStateTransaction } from './transaction.js';
 import {memberInvitationPlan,memberInvitationSnapshot,defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact,profileValues,normalizeProfileChange} from './registration.js';
 import {contributionReviewSnapshot,contributionFor,validYear,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
-import {cancelRegistrationTeam} from './team-transfer.js';
+import {cancelRegistrationTeam,resolvePlayerAccount} from './team-transfer.js';
 import {boardInvitationIssues,boardRegistrationNotifications,cancellationPaymentReview} from './board-alerts.js';
 
 export const firebaseProjectId=firebaseConfig.projectId;
@@ -163,6 +163,62 @@ export async function listBoardInvitationIssues(tournamentIds=[tournamentId]){
 export async function reviewCancellationPayment(id,entryId,{paidCents,note}){
  await requireBoardAccount();checkRegistrationId(id);if(typeof entryId!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(entryId))throw Error('Ungültige Anmeldung.');const ref=entryRef(id,entryId);
  await api.runTransaction(db,async tx=>{const old=await tx.get(ref);const review=cancellationPaymentReview(old.data(),paidCents,note);tx.update(ref,{paymentReview:{...review,reviewedBy:auth.currentUser.uid,reviewedAt:api.serverTimestamp()},updatedAt:api.serverTimestamp()});});
+}
+
+const retryTime=t=>t?.toMillis?.()??(typeof t==='number'?t:(t?.seconds??0)*1000);
+const retryTargetSnapshot=(kind,target)=>JSON.stringify(kind==='member'?[memberInvitationSnapshot(target)]:[target.status,target.teamId,target.players]);
+const retryLogSnapshot=log=>JSON.stringify([log.status,log.email,log.uid??'',log.requestId??'',retryTime(log.updatedAt)]);
+/** Read-only: Adresse, Person und bestehende Konten vor der ausdrücklichen Bestätigung neu prüfen. */
+export async function previewInvitationRetry(issue){
+ await requireBoardAccount();if(!issue||!['member','player'].includes(issue.kind))throw Error('Ungültiger Einladungsversuch.');
+ const member=issue.kind==='member',key=member?issue.memberId:issue.entryId;
+ if(typeof key!=='string'||!key||key.length>128||key.includes('/'))throw Error('Ungültiger Einladungsversuch.');
+ if(!member){checkRegistrationId(issue.tournamentId);if(![1,2].includes(issue.slot))throw Error('Ungültiger Spielerplatz.');}
+ const logRef=member?api.doc(db,'memberInvitations',key):api.doc(db,'playerInvitations',issue.tournamentId,'entries',key+'__'+issue.slot),targetRef=member?api.doc(db,'members',key):entryRef(issue.tournamentId,key);
+ const [logDoc,targetDoc,members,accounts,persons]=await Promise.all([api.getDoc(logRef),api.getDoc(targetRef),listMembers(),listAccounts(),listPersons()]);
+ if(!logDoc.exists()||logDoc.data().status!=='review')throw Error('Dieser Versuch wurde bereits bearbeitet oder läuft gerade. Bitte Aufgaben aktualisieren.');
+ if(!targetDoc.exists())throw Error('Mitglied oder Anmeldung ist nicht mehr vorhanden.');
+ const log=logDoc.data(),target={id:key,...targetDoc.data()},person=member?target:target.players?.[issue.slot-1],address=String(person?.email??'').trim().toLowerCase();
+ if(!person||member&&!target.active||!member&&(target.status!=='confirmed'||!target.teamId))throw Error('Bitte ein aktives Mitglied beziehungsweise ein bestätigtes Spielplanteam verwenden.');
+ if(!/^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(address)||address!==String(log.email??'').trim().toLowerCase())throw Error('Die persönliche E-Mail wurde geändert oder fehlt. Bitte die Zuordnung zuerst in der Verwaltung prüfen.');
+ let match,memberId=member?key:'';
+ if(member){
+  const profiles=await api.getDocs(api.collection(db,'memberProfiles')),row=memberInvitationPlan(members,accounts,[],{persons,profiles:profiles.docs.map(d=>({id:d.id,...d.data()}))}).find(p=>p.memberId===key);
+  if(!row||row.kind==='review')throw Error(row?.detail||'Mitglied bitte prüfen.');match=row.uid?{key:'existing',account:accounts.find(a=>a.uid===row.uid)}:{key:'missing'};
+ }else{
+  const state=await api.getDoc(api.doc(db,'tournaments',issue.tournamentId));if(!state.data()?.teams?.some(t=>t.id===target.teamId))throw Error('Das Spielplanteam fehlt. Bitte zuerst die Teamübernahme prüfen.');
+  match=resolvePlayerAccount(person,{directory:accounts,members,identities:persons});if(match.key==='review')throw Error(match.detail);memberId=match.member?.id??'';
+ }
+ const account=match.account,action=account?'link':'invite',name=member?target.firstName+' '+target.lastName:person.firstName+' '+person.lastName;
+ const snapshot=JSON.stringify([retryLogSnapshot(log),retryTargetSnapshot(issue.kind,target),action,account?[account.uid,account.email,account.role,account.teamId??'',account.tournamentId??'',!!account.disabled]:null,memberId]);
+ return{kind:issue.kind,memberId,entryId:member?'':key,slot:member?0:issue.slot,tournamentId:member?'':issue.tournamentId,name,email:account?.email||address,action,uid:account?.uid||'',snapshot};
+}
+/** Genau ein bestätigter Fehlversuch; kein automatischer Wiederholungs- oder Sammelversand. */
+export async function retryInvitation(issue,{expectedSnapshot}={}){
+ const plan=await previewInvitationRetry(issue);if(typeof expectedSnapshot!=='string'||plan.snapshot!==expectedSnapshot)throw Error('Der Stand wurde seit der Vorschau geändert. Bitte neu prüfen.');
+ const member=plan.kind==='member',key=member?issue.memberId:issue.entryId,ref=member?api.doc(db,'memberInvitations',key):api.doc(db,'playerInvitations',plan.tournamentId,'entries',key+'__'+plan.slot),targetRef=member?api.doc(db,'members',key):entryRef(plan.tournamentId,key),requestId=crypto.randomUUID();
+ const [logSnapshot,targetSnapshot]=JSON.parse(plan.snapshot);
+ await api.runTransaction(db,async tx=>{
+  const [old,target]=await Promise.all([tx.get(ref),tx.get(targetRef)]);
+  if(!old.exists()||!target.exists()||old.data().status!=='review'||retryLogSnapshot(old.data())!==logSnapshot||retryTargetSnapshot(plan.kind,{id:key,...target.data()})!==targetSnapshot)throw Error('Der Versuch wurde inzwischen bearbeitet. Kein erneuter Versand.');
+  tx.set(ref,{...old.data(),status:'processing',requestId,retryCount:(old.data().retryCount??0)+1,requestedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});
+ });
+ const finish=async(status,uid,error='')=>api.runTransaction(db,async tx=>{const old=await tx.get(ref);if(old.data()?.requestId!==requestId||old.data()?.status!=='processing')throw Error('Der Einladungsstand wurde inzwischen geändert. Bitte prüfen.');tx.set(ref,{...old.data(),status,...(member?{message:error,...(uid?{uid}:{})}:{error}),updatedAt:api.serverTimestamp()});});
+ let uid=plan.uid;
+ try{
+  // Noch einmal lesen: Ein zwischenzeitlich angelegtes Konto darf keine zweite Mail erhalten.
+  const accounts=await listAccounts(),existing=accounts.find(a=>plan.uid?a.uid===plan.uid:a.email?.trim().toLowerCase()===plan.email.toLowerCase());
+  if(existing?.disabled)throw Error('Das Konto ist gesperrt. Bitte die Zuordnung prüfen.');
+  const target=await api.getDoc(targetRef);if(!target.exists()||retryTargetSnapshot(plan.kind,{id:key,...target.data()})!==targetSnapshot)throw Error('Person oder Anmeldung wurde inzwischen geändert. Bitte prüfen.');
+  const row=target.data();
+  if(existing){uid=existing.uid;if(!member)await setRole(uid,{...existing,role:existing.role==='guest'?'player':existing.role,teamId:row.teamId,tournamentId:plan.tournamentId});}
+  else{if(plan.uid)throw Error('Das vorhandene Konto fehlt inzwischen. Bitte prüfen.');uid=await createAccount({email:plan.email,name:plan.name,role:member?'guest':'player',teamId:member?'':row.teamId,...(member?{}:{tournamentId:plan.tournamentId})});}
+  const freshTarget=await api.getDoc(targetRef);if(!freshTarget.exists()||retryTargetSnapshot(plan.kind,{id:key,...freshTarget.data()})!==targetSnapshot)throw Error('Person oder Anmeldung wurde während der Kontoeinrichtung geändert. Verknüpfung bitte prüfen.');
+  if(!member)await linkParticipationAccount(plan.tournamentId,row.teamId,plan.slot,uid);
+  if(plan.memberId)await linkMemberAccount(plan.memberId,uid,member?{expectedInvitationMember:memberInvitationSnapshot({id:key,...row})}:{});
+  await finish(member?'sent':'accepted',uid);
+  return{uid,sent:!existing,notice:existing?'Vorhandenes Konto verknüpft. Keine neue Passwort-Mail versendet.':'Einladung von Firebase zum Versand angenommen.'};
+ }catch(error){const message=String(error.message??error).slice(0,600);try{await finish('review',uid,message);}catch{throw Error(message+' Der Protokollstand muss geprüft werden; bitte nicht blind erneut versenden.');}throw error;}
 }
 
 /** Optimistische Konkurrenzkontrolle plus Firestore-Transaktion: kein Lost Update. */
