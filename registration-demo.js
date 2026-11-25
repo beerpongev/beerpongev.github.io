@@ -5,6 +5,7 @@ import {contributionReviewSnapshot,contributionFor,normalizeContribution,legacyC
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
 import {cancelRegistrationTeam} from './team-transfer.js';
 import {memberInvitationPlan} from './registration.js';
+import {boardInvitationIssues,cancellationPaymentReview} from './board-alerts.js';
 export function createDemoRegistry({getTournamentState=()=>null,saveTournamentState=()=>{}}={}){
  const invitationAccounts=new Map(),invitationLogs=new Map();
  const contributions=new Map(),transactions=new Map(),listeners=new Set(),persons=new Map(),publicPlayers=new Map(),participations=new Map(),corrections=new Map(),debitExports=new Map();let clubSettings={};let sportArchives=[];
@@ -48,6 +49,7 @@ export function createDemoRegistry({getTournamentState=()=>null,saveTournamentSt
    const s=getEvent(id),rows=entries.get(id),old=rows.find(r=>r.id===entryId),key=entryId??crypto.randomUUID();
    for(const update of contactEmailUpdates){const member=members.get(update.memberId),person=input.players.find(p=>p.memberId===update.memberId&&p.verified&&p.member);if(!member||!person||member.email!==update.expectedEmail)throw Error('Kontaktadresse wurde geändert. Bitte neu prüfen.');}
    const row={...normalizeRegistration({...input,prices:input.prices??s.prices},{board:true,allowMissingEmail:true}),id:key,status,sequence:old?.sequence??s.nextSequence+1,source:old?.source??source,sourceDate:old?.sourceDate??sourceDate,createdAt:old?.createdAt??Date.now(),updatedAt:Date.now()};
+   if(status==='cancelled'&&old?.status==='cancelled'&&old.paymentReview?.paidCents===row.paidCents)row.paymentReview=old.paymentReview;
    let cancelled=status==='cancelled'&&old?.teamId?cancelRegistrationTeam(getTournamentState(id),old.teamId):null;
    if(cancelled?.teamRemoval==='removed'&&rows.some(r=>r.id!==key&&r.teamId===old.teamId&&r.status!=='cancelled'))cancelled={state:cancelled.state,teamRemoval:'shared'};
    if(status==='cancelled')row.teamId=old?.teamId??'';
@@ -58,6 +60,8 @@ export function createDemoRegistry({getTournamentState=()=>null,saveTournamentSt
    events.set(id,settings);if(old)Object.assign(old,row);else rows.push(row);return copy({...row,...(cancelled?{teamRemoval:cancelled.teamRemoval}:{})});
   },
   listMembers:async()=>copy([...members.values()]),
+  listBoardInvitationIssues:async(ids=['main'])=>boardInvitationIssues({members:[...members.values()],accounts:[...invitationAccounts.values()],memberInvitations:[...invitationLogs.values()],groups:ids.map(id=>({id,rows:entries.get(id)??[],invitations:[]}))}),
+  reviewCancellationPayment:async(id,entryId,{paidCents,note})=>{const row=(entries.get(id)??[]).find(r=>r.id===entryId);row.paymentReview={...cancellationPaymentReview(row,paidCents,note),reviewedBy:'demo',reviewedAt:Date.now()};row.updatedAt=Date.now();},
   previewMemberInvitations:async()=>{
    const users=[...invitationAccounts.values()];for(const m of members.values())if(m.accountUid&&!users.some(u=>u.uid===m.accountUid))users.push({uid:m.accountUid,email:m.email,name:m.firstName+' '+m.lastName,role:'guest'});
    return copy(memberInvitationPlan([...members.values()],users,[...invitationLogs.values()],{profiles:[...members.values()].filter(m=>m.accountUid).map(m=>({id:m.accountUid,memberId:m.id})),persons:[...persons.values()]}));

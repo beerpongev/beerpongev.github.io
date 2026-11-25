@@ -1,6 +1,7 @@
 import {escapeHTML as e} from './ui.js';
 import {dispatch} from './scheduler.js';
 import {tableStatus} from './engine.js';
+import {boardRegistrationNotifications} from './board-alerts.js';
 export const notificationTime=t=>t?.toMillis?.()??(typeof t==='number'?t:(t?.seconds??0)*1000);
 export function freeTableNotifications(state,tournamentId){
  if(!state||['setup','complete'].includes(state.phase))return[];
@@ -25,7 +26,15 @@ export function createNotifications(ctx){
   paint();
  }
  function stopAll(){generation++;stop();stop=()=>{};inbox=[];items=[];seen.clear();known.clear();primed=false;demoLoading=false;host.innerHTML='';host.hidden=true;key='';}
- async function demoInbox(g){if(demoLoading)return;demoLoading=true;try{const api=ctx.backend(),[applications,changes,groups]=await Promise.all([api.listMemberships(),api.listProfileChanges(),Promise.all(ctx.eventIds().map(async id=>({id,rows:await api.listRegistrations(id)})))]);if(g!==generation)return;inbox=[...changes.filter(r=>r.status==='pending').map(r=>({id:'profile-change:'+r.id+':'+notificationTime(r.submittedAt),title:'Neue Datenänderung',detail:'Ein Mitglied hat seine Daten geändert. Bitte zur Freigabe prüfen.',view:'applications',time:notificationTime(r.submittedAt)})),...applications.filter(a=>!a.review).map(a=>({id:'application:'+a.id,title:'Neuer Mitgliedsantrag',detail:'Mitgliedsantrag im Vorstand prüfen.',view:'applications',time:notificationTime(a.createdAt)})),...groups.flatMap(group=>group.rows.map(r=>({id:'registration:'+group.id+':'+r.id,title:'Neue Turnieranmeldung',detail:r.teamName,view:'registrations',tournamentId:group.id,time:notificationTime(r.createdAt)})))];refresh();primed=true;}catch(err){if(g===generation)ctx.toast('Benachrichtigungen: '+err.message);}finally{if(g===generation)demoLoading=false;}}
+ async function demoInbox(g){
+  if(demoLoading)return;demoLoading=true;
+  try{
+   const api=ctx.backend(),[applications,changes,groups,issues]=await Promise.all([api.listMemberships(),api.listProfileChanges(),Promise.all(ctx.eventIds().map(async id=>({id,rows:await api.listRegistrations(id),state:id===ctx.tournamentId()?ctx.state():null}))),api.listBoardInvitationIssues?api.listBoardInvitationIssues(ctx.eventIds()):[]]);
+   if(g!==generation)return;
+   inbox=[...changes.filter(r=>r.status==='pending').map(r=>({id:'profile-change:'+r.id+':'+notificationTime(r.submittedAt),title:'Neue Datenänderung',detail:'Ein Mitglied hat seine Daten geändert. Bitte zur Freigabe prüfen.',view:'applications',time:notificationTime(r.submittedAt)})),...applications.filter(a=>!a.review).map(a=>({id:'application:'+a.id,title:'Neuer Mitgliedsantrag',detail:'Mitgliedsantrag im Vorstand prüfen.',view:'applications',time:notificationTime(a.createdAt)})),...groups.flatMap(group=>boardRegistrationNotifications(group.rows,group.state,group.id)),...issues.map(r=>({id:'invitation-issue:'+r.id+':'+r.time,title:'Kontoeinladung fehlgeschlagen',detail:r.name,view:r.view,filter:r.filter,tournamentId:r.tournamentId,time:r.time}))];
+   refresh();primed=true;
+  }catch(err){if(g===generation)ctx.toast('Benachrichtigungen: '+err.message);}finally{if(g===generation)demoLoading=false;}
+ }
  function update(){
   if(!ctx.ready()||!ctx.admin()){if(key)stopAll();return;}
   const next=`beerpong-notifications:${ctx.identity()}:${ctx.board()?'board':'admin'}:${ctx.eventIds().join(',')}`;

@@ -59,11 +59,11 @@ function toast(message){clearTimeout(toastTimer);$('#toast').textContent=message
 const demoRegistry=createDemoRegistry({getTournamentState:id=>id===selectedTournamentId?state:null,saveTournamentState:(id,next)=>{if(id!==selectedTournamentId)throw Error('Bitte das betroffene Turnier öffnen.');localStorage.setItem(DEMO_KEY,JSON.stringify(next));state=next;}});
 const memberInvitations=createMemberInvitations({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,isBoard:board,isActive:()=>view==='accounts'&&(demo||!accessPending&&!accessError),identity:()=>`${demo?'demo':'live'}:${user?.uid??'local'}:${role}`,toast});
 let registrationSettings={};
-const clubAdministration=createClubAdministration({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,isBoard:board,signedIn:()=>!!user&&!user.isAnonymous,settings:()=>clubSettings,applySettings:settings=>{clubSettings=settings;setContributionRates(settings.contributionRates);},eventSettings:()=>registrationEvent(selectedTournamentId),tournamentId:()=>selectedTournamentId,catalog:()=>catalog,archives:getClubArchives,ensureArchives,toast});
+const clubAdministration=createClubAdministration({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,isBoard:board,signedIn:()=>!!user&&!user.isAnonymous,settings:()=>clubSettings,applySettings:settings=>{clubSettings=settings;setContributionRates(settings.contributionRates);},eventSettings:()=>registrationEvent(selectedTournamentId),tournamentId:()=>selectedTournamentId,state:()=>state,catalog:()=>catalog,archives:getClubArchives,ensureArchives,toast});
 const registrationEvent=id=>demo?demoRegistry.getSettings(id):registrationSettings[id];
 const registryManagement=createRegistryManagement({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,isBoard:board,settings:registrationEvent,teams:()=>state?.teams??null,phase:()=>state?.phase,settingsChanged:()=>render(),toast,transferTeam,invitePlayers,accountLink:m=>memberWorkflows.accountLink(m)});
 const memberWorkflows=createMemberWorkflows({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,isBoard:board,user:()=>user,users:()=>users,toast,dialog:openDialog,closeDialog:()=>$('#dialog').close(),download:downloadPrivatePDF,downloadAll:rows=>downloadMemberships(rows),refreshRegistry:()=>{view='members';render(true);}});
-const notifications=createNotifications({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,admin,board,ready:()=>demo?(!onlineDemoRequested||demoAuthorized):!accessPending&&!accessError&&!!user&&!user.isAnonymous,identity:()=>`${demo?'demo':'live'}:${cloud.firebaseProjectId}:${user?.uid??'local'}:${role}`,state:()=>state,tournamentId:()=>selectedTournamentId,readOnly:isReadOnly,eventIds:()=>catalog.filter(t=>!t.archived&&!t.externalUrl).map(t=>t.id),toast,open:async item=>{if(item.tournamentId&&item.tournamentId!==selectedTournamentId)await chooseTournament(item.tournamentId);navigateView(item.view);if(item.table)requestAnimationFrame(()=>{$('#table-'+item.table)?.scrollIntoView({block:'center'});$('#table-'+item.table)?.focus({preventScroll:true});});}});
+const notifications=createNotifications({backend:()=>demo?demoRegistry:cloud,demo:()=>demo,admin,board,ready:()=>demo?(!onlineDemoRequested||demoAuthorized):!accessPending&&!accessError&&!!user&&!user.isAnonymous,identity:()=>`${demo?'demo':'live'}:${cloud.firebaseProjectId}:${user?.uid??'local'}:${role}`,state:()=>state,tournamentId:()=>selectedTournamentId,readOnly:isReadOnly,eventIds:()=>catalog.filter(t=>!t.archived&&!t.externalUrl).map(t=>t.id),toast,open:async item=>{if(item.tournamentId&&item.tournamentId!==selectedTournamentId)await chooseTournament(item.tournamentId);navigateView(item.view,{filter:item.filter});if(item.table)requestAnimationFrame(()=>{$('#table-'+item.table)?.scrollIntoView({block:'center'});$('#table-'+item.table)?.focus({preventScroll:true});});}});
 async function transferTeam(row,{invite=false}={}){
  const invitationIssue=invite?playerInvitationIssue(row):'';
  if(!board()||row.status!=='confirmed')throw Error('Nur angemeldete Teams können durch den Vorstand übernommen werden.');
@@ -121,12 +121,12 @@ function syncLocation(push=false){
   if(!['home','tournaments','rules','membership','history','imprint','privacy'].includes(view))url.searchParams.set('turnier',selectedTournamentId);
   if(url.href!==location.href)history[push?'pushState':'replaceState']({},'',url);
 }
-function navigateView(next){
+function navigateView(next,{filter}={}){
   if(next==='history'&&!canHistory()){toast('Bitte zuerst anmelden.');return;}
   if(busy)return;
   if(!Object.hasOwn(routeNames,next))return;
   // Explizite Aufgabenlinks behalten ihren Filter; gewöhnliche Navigation startet ohne Altfilter.
-  const nextURL=new URL(location.href);nextURL.searchParams.delete('filter');history.replaceState({},'',nextURL);
+  const nextURL=new URL(location.href);if(filter)nextURL.searchParams.set('filter',filter);else nextURL.searchParams.delete('filter');history.replaceState({},'',nextURL);
   if(['admin','registrations'].includes(next)&&isReadOnly()){
     const active=catalog.find(t=>!t.archived&&!t.externalUrl);if(active){void chooseTournament(active.id).then(()=>{if(['history','people'].includes(next)||currentTournament()?.externalUrl)void ensureArchives().then(()=>{if(['history','people'].includes(view))render(true);});
   view=next;syncLocation(true);render(true);});return;}

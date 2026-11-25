@@ -52,3 +52,5 @@
 .notification-unread{border-left:5px solid #d40020;background:#fff0e9}
 @media(max-width:420px){.topbar .account{gap:9px}.notification-control summary{width:42px;height:44px}}
 @media(max-width:650px){.topbar .account:has(.notification-control:not([hidden])){display:grid;grid-template-columns:44px auto;gap:8px}.account:has(.notification-control:not([hidden])) .header-status{grid-column:1/-1;grid-row:1}.account:has(.notification-control:not([hidden])) .notification-control{grid-column:1;grid-row:2}.account:has(.notification-control:not([hidden])) #login-button{grid-column:2;grid-row:2}}
+
+button.board-task{font:inherit;text-align:left;width:100%;cursor:pointer}.board-arrears{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}.board-arrears-row{display:flex;justify-content:space-between;gap:16px;padding:16px 0;border-top:1px solid var(--line)}.board-arrears-row>div{min-width:0;overflow-wrap:anywhere}.board-arrears-row small{display:block}.board-arrears-row>strong{white-space:nowrap}.board-arrears-row p{font-size:.85rem;margin-bottom:0}@media(max-width:500px){.board-arrears-row{flex-direction:column;gap:6px}}

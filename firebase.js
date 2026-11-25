@@ -6,6 +6,7 @@ import {memberInvitationPlan,memberInvitationSnapshot,defaultRegistrationSetting
 import {contributionReviewSnapshot,contributionFor,validYear,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
 import {cancelRegistrationTeam} from './team-transfer.js';
+import {boardInvitationIssues,boardRegistrationNotifications,cancellationPaymentReview} from './board-alerts.js';
 
 export const firebaseProjectId=firebaseConfig.projectId;
 export const configured = firebaseConfig.apiKey !== 'HIER_EINTRAGEN' && firebaseConfig.projectId !== 'DEIN-PROJEKT';
@@ -137,20 +138,32 @@ export async function listMemberships(){
 }
 /** Private Inbox: ausschließlich Vorstand, keine PDFs oder Antragsdaten in die UI-Meldungen übernehmen. */
 export async function watchNotificationInbox({tournamentIds=[],onItems,onError}){
- await requireBoardAccount();tournamentIds=[...new Set(tournamentIds)];tournamentIds.forEach(checkRegistrationId);const values=new Map(),cancels=[],required=['applications','reviews','profile-changes',...tournamentIds.map(id=>'registrations:'+id)];let watching=true;
- const publish=()=>{if(!watching||required.some(k=>!values.has(k)))return;const reviewed=new Set(values.get('reviews').map(r=>r.id));onItems([
+ await requireBoardAccount();tournamentIds=[...new Set(tournamentIds)];tournamentIds.forEach(checkRegistrationId);const values=new Map(),cancels=[],required=['applications','reviews','profile-changes','members','accounts','member-invitations',...tournamentIds.flatMap(id=>['registrations:'+id,'state:'+id,'invitations:'+id])];let watching=true,failed=false;
+ const publish=()=>{if(!watching||failed||required.some(k=>!values.has(k)))return;const reviewed=new Set(values.get('reviews').map(r=>r.id)),groups=tournamentIds.map(id=>({id,rows:values.get('registrations:'+id),state:values.get('state:'+id),invitations:values.get('invitations:'+id)})),issues=boardInvitationIssues({members:values.get('members'),accounts:values.get('accounts').map(a=>({...a,uid:a.id})),memberInvitations:values.get('member-invitations'),groups});onItems([
   ...values.get('applications').filter(a=>!reviewed.has(a.id)).map(a=>({id:'application:'+a.id,title:'Neuer Mitgliedsantrag',detail:'Mitgliedsantrag im Vorstand prüfen.',view:'applications',time:a.createdAt?.toMillis?.()??0})),
   ...values.get('profile-changes').filter(r=>r.status==='pending').map(r=>{const time=r.submittedAt?.toMillis?.()??(r.submittedAt?.seconds??0)*1000;return{id:'profile-change:'+r.id+':'+time,title:'Neue Datenänderung',detail:'Ein Mitglied hat seine Daten geändert. Bitte zur Freigabe prüfen.',view:'applications',time};}),
-  ...tournamentIds.flatMap(id=>values.get('registrations:'+id).map(r=>({id:'registration:'+id+':'+r.id,title:'Neue Turnieranmeldung',detail:r.teamName,view:'registrations',tournamentId:id,time:r.createdAt?.toMillis?.()??0})))
+  ...groups.flatMap(group=>boardRegistrationNotifications(group.rows,group.state,group.id)),
+  ...issues.map(r=>({id:'invitation-issue:'+r.id+':'+r.time,title:'Kontoeinladung fehlgeschlagen',detail:r.name,view:r.view,filter:r.filter,tournamentId:r.tournamentId,time:r.time}))
  ]);};
- const watch=(key,ref)=>cancels.push(api.onSnapshot(ref,s=>{values.set(key,s.docs.map(d=>({id:d.id,...d.data()})));publish();},onError));
+ const watch=(key,ref,document=false)=>cancels.push(api.onSnapshot(ref,s=>{if(!watching||failed)return;values.set(key,document?(s.exists()?s.data():null):s.docs.map(d=>({id:d.id,...d.data()})));publish();},err=>{failed=true;if(watching)onError?.(err);}));
  watch('applications',api.query(api.collection(db,'membershipApplications'),api.orderBy('createdAt','desc'),api.limit(30)));
  watch('reviews',api.collection(db,'membershipReviews'));
  watch('profile-changes',api.query(api.collection(db,'memberProfileChanges'),api.where('status','==','pending')));
- for(const id of tournamentIds){checkRegistrationId(id);watch('registrations:'+id,api.query(api.collection(db,'tournamentRegistrations',id,'entries'),api.orderBy('createdAt','desc'),api.limit(30)));}
- return()=>{watching=false;cancels.forEach(cancel=>cancel());};
+ watch('members',api.collection(db,'members'));watch('accounts',api.collection(db,'roles'));watch('member-invitations',api.collection(db,'memberInvitations'));
+ for(const id of tournamentIds){checkRegistrationId(id);watch('registrations:'+id,api.collection(db,'tournamentRegistrations',id,'entries'));watch('state:'+id,api.doc(db,'tournaments',id),true);watch('invitations:'+id,api.collection(db,'playerInvitations',id,'entries'));}
+ return()=>{watching=false;cancels.forEach(cancel=>cancel());values.clear();};
 }
 export async function deleteMembership(id){await requireBoardAccount();await api.runTransaction(db,async tx=>{tx.delete(api.doc(db,'membershipApplications',id));tx.delete(api.doc(db,'membershipApplicationPDFs',id));});}
+
+export async function listBoardInvitationIssues(tournamentIds=[tournamentId]){
+ await requireBoardAccount();tournamentIds=[...new Set(tournamentIds)];tournamentIds.forEach(checkRegistrationId);
+ const [members,accounts,logs,groups]=await Promise.all([listMembers(),listAccounts(),api.getDocs(api.collection(db,'memberInvitations')),Promise.all(tournamentIds.map(async id=>({id,rows:await listRegistrations(id),invitations:(await api.getDocs(api.collection(db,'playerInvitations',id,'entries'))).docs.map(d=>({id:d.id,...d.data()}))}))) ]);
+ return boardInvitationIssues({members,accounts,memberInvitations:logs.docs.map(d=>({id:d.id,...d.data()})),groups});
+}
+export async function reviewCancellationPayment(id,entryId,{paidCents,note}){
+ await requireBoardAccount();checkRegistrationId(id);if(typeof entryId!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(entryId))throw Error('Ungültige Anmeldung.');const ref=entryRef(id,entryId);
+ await api.runTransaction(db,async tx=>{const old=await tx.get(ref);const review=cancellationPaymentReview(old.data(),paidCents,note);tx.update(ref,{paymentReview:{...review,reviewedBy:auth.currentUser.uid,reviewedAt:api.serverTimestamp()},updatedAt:api.serverTimestamp()});});
+}
 
 /** Optimistische Konkurrenzkontrolle plus Firestore-Transaktion: kein Lost Update. */
 export async function mutate(transform, expectedRevision, { id, baseline, match } = {}) {
@@ -260,6 +273,7 @@ export async function saveRegistration(id,input,{entryId,status='confirmed',sour
   if(!event.exists())throw Error('Bitte zuerst die Anmeldung einrichten.');const settings=event.data(),old=existing.exists()?existing.data():null;
   if(expectedUpdatedAt!==undefined&&(old?.updatedAt?.toMillis?.()??null)!==expectedUpdatedAt)throw Error('Die Anmeldung wurde inzwischen geändert. Bitte neu öffnen.');
   const row={...normalizeRegistration({...input,prices:input.prices??settings.prices},{board:true,allowMissingEmail:true}),owner:old?.owner??auth.currentUser.uid,status,sequence:old?.sequence??settings.nextSequence+1,source:old?.source??source,sourceDate:old?.sourceDate??sourceDate,consent:old?.consent??false,createdAt:old?.createdAt??api.serverTimestamp(),updatedAt:api.serverTimestamp()};
+  if(status==='cancelled'&&old?.status==='cancelled'&&old.paymentReview?.paidCents===row.paidCents)row.paymentReview=old.paymentReview;
   let cancelled=null,stateRef=null;
   if(status==='cancelled')row.teamId=old?.teamId??'';
   if(status==='cancelled'&&old?.teamId){

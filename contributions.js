@@ -23,6 +23,23 @@ export function legacyContribution(member,year){
  return{memberId:member.id,year:String(year),dueCents:['notdue','waived'].includes(status)?0:fee,paidCents:status==='paid'?Math.max(fee,amount??0):0,status,method:has?'excel':'manual',date:'',note:has?`Excel: ${value||'leer'}${color?' · '+color:''}`:'',revision:-1,legacy:has,value,color};
 }
 export function contributionFor(member,year,entries=[]){return entries.find(r=>r.memberId===member.id)??legacyContribution(member,year);}
+/** Ein offener Beitrag = ein Mitglied und ein Vorjahr; bestätigte Buchungen gehen vor Excel. */
+export function historicalContributionSummary(members,byYear,beforeYear){
+ if(!validYear(beforeYear))throw Error('Ungültiges Beitragsjahr.');
+ const rows=[];
+ for(const member of members){
+  const joined=joinedDate(member.joined),years=[];
+  for(let y=2000;y<+beforeYear;y++){
+   const year=String(y),entries=byYear[year]??[],documented=entries.some(c=>c.memberId===member.id)||Object.hasOwn(member.feeHistory??{},year)||Object.hasOwn(member.feeColors??{},year);
+   if(!joined&&!documented)continue;
+   const c=contributionFor(member,year,entries),remainingCents=Math.max(0,c.dueCents-c.paidCents);
+   if(remainingCents>0&&['open','returned','review','pending'].includes(c.status))years.push({year,status:c.status,remainingCents});
+  }
+  if(years.length)rows.push({memberId:member.id,name:fullName(member),active:!!member.active,years,amountCents:years.reduce((n,c)=>n+c.remainingCents,0)});
+ }
+ rows.sort((a,b)=>a.name.localeCompare(b.name,'de'));
+ return{rows,count:rows.reduce((n,r)=>n+r.years.length,0),memberCount:rows.length,totalCents:rows.reduce((n,r)=>n+r.amountCents,0)};
+}
 export function memberContributionYears(member,stored=[],selected=currentFeeYear()){
  const years=new Set([...Object.keys(member.feeHistory??{}),...Object.keys(member.feeColors??{}),...stored.map(c=>c.year),String(selected),currentFeeYear()].filter(validYear)),joined=joinedDate(member.joined);
  if(joined)for(let y=Math.max(2000,+joined.slice(0,4));y<=+currentFeeYear();y++)years.add(String(y));

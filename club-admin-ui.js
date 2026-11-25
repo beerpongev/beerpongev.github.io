@@ -1,8 +1,9 @@
 import {escapeHTML as e,localDate} from './ui.js';
 import {needsMembershipReview,fullName,nameKey,euro} from './registration.js';
-import {contributionFor,legacyContribution} from './contributions.js';
+import {contributionFor,historicalContributionSummary,contributionStates} from './contributions.js';
 import {annualFee} from './pricing.js';
 import {mountHistory} from './history.js';
+import {transferOutstanding,cancellationPaymentOutstanding} from './board-alerts.js';
 
 export function legalView(kind,settings={}){
  const legal=settings.legal??{},missing=['address','representatives','registerCourt','registerNumber'].some(k=>!legal[k]);
@@ -18,23 +19,31 @@ export function createClubAdministration(ctx){
  async function mountBoard(root){
   const g=++generation;if(!ctx.isBoard())return;
   root.innerHTML='<p class="club-error form-error" hidden role="alert"></p><section class="panel"><h3>Offene Aufgaben</h3><div id="board-tasks">Wird geladen …</div><button class="text-button" id="tasks-reload">Aufgaben aktualisieren</button></section><details class="panel" id="board-club-settings"><summary>Vereinsangaben & Jahresbeitrag</summary><div id="club-settings-form"></div></details>';
+  let refreshGeneration=0;
   const refresh=async()=>{
+   const request=++refreshGeneration,year=localDate().slice(0,4);
    try{
-    const api=ctx.backend(),[members,entries,applications,contributions,changes]=await Promise.all([api.listMembers(),api.listRegistrations(ctx.tournamentId()),api.listMemberships(),api.listContributions(localDate().slice(0,4)),api.listProfileChanges?api.listProfileChanges():[]]);
-    if(!allowed(root,g))return;
-    const s=ctx.eventSettings()??{},year=localDate().slice(0,4),tasks=[
+    const api=ctx.backend(),[members,entries,applications,annual,changes,issues]=await Promise.all([api.listMembers(),api.listRegistrations(ctx.tournamentId()),api.listMemberships(),Promise.all(Array.from({length:+year-2000+1},(_,i)=>String(2000+i)).map(async y=>[y,await api.listContributions(y)])),api.listProfileChanges?api.listProfileChanges():[],api.listBoardInvitationIssues?api.listBoardInvitationIssues([ctx.tournamentId()]):[]]);
+    if(!allowed(root,g)||request!==refreshGeneration)return;
+    const byYear=Object.fromEntries(annual),contributions=byYear[year],past=historicalContributionSummary(members,byYear,year);
+    const s=ctx.eventSettings()??{},tasks=[
      ['applications','',applications.filter(a=>!a.review).length,'Mitgliedsanträge prüfen'],
      ['applications','changes',changes.filter(r=>r.status==='pending').length,'Datenänderungen freigeben'],
      ['registrations','email',entries.filter(r=>r.status!=='cancelled'&&r.players.some(p=>!p.email)).length,'Persönliche E-Mail ergänzen'],
      ['registrations','unverified',entries.filter(r=>r.status!=='cancelled'&&r.players.some(p=>needsMembershipReview(p,members))).length,'Mitgliedschaft und Gebühren prüfen'],
      ['registrations','duplicates',duplicateEntries(entries).size,'Mögliche doppelte Personen / Teams prüfen'],
      ['registrations','unpaid',entries.filter(r=>r.status==='confirmed'&&r.paidCents<r.fees.totalCents).length,'Turnierzahlungen offen'],
+     ['registrations','transfer-open',entries.filter(r=>transferOutstanding(r,ctx.state?.())).length,'Teamübernahme offen / prüfen'],
+     ['registrations','cancel-payment',entries.filter(cancellationPaymentOutstanding).length,'Zahlung nach Absage prüfen'],
      ['registrations','waitlist',s.waitlistCount&&s.confirmedCount<s.capacity?s.waitlistCount:0,'Freier Platz: Nachrücken bestätigen'],
      ['members','bank',members.filter(m=>m.bankStatus==='unclear').length,'Bankverbindung klären'],
      ['members','action',members.filter(m=>m.active&&['open','review','returned'].includes(contributionFor(m,year,contributions).status)).length,`Jahresbeiträge ${year} offen / prüfen`]
     ];
-    root.querySelector('#board-tasks').innerHTML=`<div class="board-task-grid">${tasks.map(([view,filter,count,label])=>`<a class="board-task ${count?'has-work':''}" ${view==='applications'?'data-view="applications"':''} href="?bereich=${view==='registrations'?'anmeldungen-verwalten':view==='applications'?'antraege':'mitglieder-verwalten'}&turnier=${encodeURIComponent(ctx.tournamentId())}&filter=${filter}"><b>${count}</b><span>${e(label)}</span></a>`).join('')}</div><p class="legend">Die Zähler berücksichtigen bestätigte Jahresbuchungen. Details und Prüffilter öffnen den jeweiligen Verwaltungsbereich.</p>`;
-   }catch(err){if(allowed(root,g))error(root,err);}
+    root.querySelector('#board-tasks').innerHTML=`<div class="board-task-grid">${tasks.map(([view,filter,count,label])=>`<a class="board-task ${count?'has-work':''}" ${view==='applications'?'data-view="applications"':''} href="?bereich=${view==='registrations'?'anmeldungen-verwalten':view==='applications'?'antraege':'mitglieder-verwalten'}&turnier=${encodeURIComponent(ctx.tournamentId())}&filter=${filter}"><b>${count}</b><span>${e(label)}</span></a>`).join('')}<button type="button" class="board-task ${past.count?'has-work':''}" id="board-arrears-toggle" aria-expanded="false" aria-controls="board-arrears"><b>${past.count}</b><span>Beiträge aus Vorjahren offen / prüfen</span></button></div><section id="board-arrears" class="board-arrears" hidden><h4>Offene Beiträge aus Vorjahren</h4><p>${past.count} Jahresbeiträge · ${past.memberCount} ${past.memberCount===1?'Person':'Personen'} · ${euro(past.totalCents)} Restbetrag / Prüfbetrag</p><p class="legend">Ein Mitglied mit drei offenen Jahren zählt als drei Beiträge. Teilzahlungen sind abgezogen. Noch vorgemerkte Einzüge und dokumentierte Rückstände ehemaliger Mitglieder sind enthalten. Ohne Eintrittsdatum werden nur belegte Beitragsjahre berücksichtigt.</p><div>${past.rows.map(r=>`<article class="board-arrears-row"><div><a href="?bereich=mitglieder-verwalten&mitglied=${encodeURIComponent(r.memberId)}"><strong>${e(r.name)}</strong> · Beitragskonto öffnen ↗</a>${r.active?'':'<small>Ehemaliges Mitglied</small>'}<p>${r.years.map(c=>e(c.year)+': '+euro(c.remainingCents)+' · '+e(contributionStates[c.status])).join('<br>')}</p></div><strong>${euro(r.amountCents)}</strong></article>`).join('')||'<p>Keine offenen Beiträge aus vergangenen Jahren.</p>'}</div></section><p class="legend">Die Zähler berücksichtigen bestätigte Jahresbuchungen. Details und Prüffilter öffnen den jeweiligen Verwaltungsbereich.</p>`;
+    root.querySelector('#board-arrears-toggle').onclick=ev=>{const button=ev.currentTarget,detail=root.querySelector('#board-arrears'),open=button.getAttribute('aria-expanded')!=='true';button.setAttribute('aria-expanded',String(open));detail.hidden=!open;};
+    const issueButton=document.createElement('button');issueButton.type='button';issueButton.className='board-task'+(issues.length?' has-work':'');issueButton.id='board-invitation-issues-toggle';issueButton.setAttribute('aria-expanded','false');issueButton.setAttribute('aria-controls','board-invitation-issues');issueButton.innerHTML='<b>'+issues.length+'</b><span>Kontoeinladungen fehlgeschlagen</span>';root.querySelector('.board-task-grid').append(issueButton);
+    const issueList=document.createElement('section');issueList.id='board-invitation-issues';issueList.className='board-arrears';issueList.hidden=true;issueList.innerHTML='<h4>Kontoeinladungen prüfen</h4>'+issues.map(i=>'<article class="board-arrears-row"><div><strong>'+e(i.name)+'</strong><p>'+e(i.email)+'<br>'+e(i.error)+'</p><a href="?bereich='+(i.view==='accounts'?'benutzerkonten':'anmeldungen-verwalten&turnier='+encodeURIComponent(i.tournamentId)+'&filter=invitation-review')+'">'+(i.view==='accounts'?'Benutzerkonten öffnen':'Betroffene Anmeldungen öffnen')+' ↗</a></div></article>').join('')+(issues.length?'':'<p>Keine offenen Fehler bei Kontoeinladungen.</p>');root.querySelector('#board-tasks').append(issueList);issueButton.onclick=()=>{issueList.hidden=!issueList.hidden;issueButton.setAttribute('aria-expanded',String(!issueList.hidden));};
+   }catch(err){if(allowed(root,g)&&request===refreshGeneration)error(root,err);}
   };
   root.querySelector('#tasks-reload').onclick=()=>void refresh();void refresh();
   const settings=ctx.settings(),legal=settings.legal??{},year=localDate().slice(0,4),missing=['address','representatives','registerCourt','registerNumber'].some(k=>!legal[k]);

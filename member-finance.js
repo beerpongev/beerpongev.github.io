@@ -10,11 +10,11 @@ const input=(label,name,value='',type='text',extra='')=>`<label>${label}<input n
 const bankLabels={date:'Buchungsdatum',amount:'Betrag',name:'Name der Gegenpartei',iban:'IBAN der Gegenpartei',purpose:'Verwendungszweck',reference:'Buchungsreferenz',currency:'Währung',bookingText:'Buchungstext',mandate:'Mandatsreferenz',original:'Ursprungsbetrag der Rücklastschrift',info:'Buchungsstatus'};
 /** Sämtliche privaten Daten nur im RAM und in der geöffneten Vorstandssicht halten. */
 export function createMemberFinance(ctx){
- let billing=false,editorGeneration=0;
+ let billing=false,editorGeneration=0,requestedMember='';
  let root=null,year=currentFeeYear(),entries=[],stop=()=>{},generation=0,selection=new Set(),csv=null,bankPreview=[],lastQuery='',debitPreview=null,bankReturns=[],exporting=false;
  const api=()=>ctx.backend(),members=()=>ctx.members(),allowed=()=>ctx.isBoard();
  const current=m=>contributionFor(m,year,entries),active=g=>g===generation&&root?.isConnected&&allowed();
- function clear(){generation++;editorGeneration++;stop();stop=()=>{};root=null;entries=[];selection.clear();csv=null;bankPreview=[];lastQuery='';debitPreview=null;bankReturns=[];}
+ function clear(){generation++;editorGeneration++;stop();stop=()=>{};root=null;entries=[];selection.clear();csv=null;bankPreview=[];lastQuery='';debitPreview=null;bankReturns=[];requestedMember='';}
  function isBankUnclear(id){const m=members().find(m=>m.id===id);return !!m&&bankRisk(m,bankReturns);}
  async function refreshBankRisks(){const g=generation,rows=await api().listBankReturnRisks();if(active(g)){bankReturns=rows;paint();}}
  function error(err){if(root&&allowed()){const box=root.querySelector('.registry-error');box.textContent=err.message??String(err);box.hidden=false;}}
@@ -36,6 +36,7 @@ export function createMemberFinance(ctx){
   const extra=document.createElement('details');extra.id='member-extra-filters';extra.innerHTML='<summary>Weitere Filter & Sortierung</summary><div class="member-extra-grid"></div>';target.querySelector('.member-filters').after(extra);extra.querySelector('div').append(root.querySelector('#member-sort').parentElement,bankFilter);extra.open=new URL(location.href).searchParams.get('filter')==='bank';
   const filter=new URL(location.href).searchParams.get('filter');if(filter==='bank')root.querySelector('#member-bank-status').value='unclear';if(filter==='action')root.querySelector('#member-payment').value='action';
   void refreshExports();
+  requestedMember=new URL(location.href).searchParams.get('mitglied')??'';
   target.querySelector('#bank-csv-file').onchange=loadCSV;const search=root.querySelector('#registry-search').parentElement;modes.after(search);root.append(target.querySelector('.contribution-tools'));modes.querySelector('#member-bank-tools').onclick=()=>{const tools=root.querySelector('.contribution-tools');tools.open=true;tools.scrollIntoView({block:'start'});tools.querySelector('summary').focus();};if(billing)void watch();void refreshBankRisks().catch(error);
  }
  function filtered(){
@@ -45,6 +46,7 @@ export function createMemberFinance(ctx){
   const order={returned:0,open:1,review:2,pending:3,paid:4,waived:5,notdue:6};return rows.sort((a,b)=>(sort==='number'?memberNumber(a.number).localeCompare(memberNumber(b.number),'de',{numeric:true}):sort==='action'?(billing?order[current(a).status]-order[current(b).status]:Number(isBankUnclear(b.id))-Number(isBankUnclear(a.id))):0)||a.lastName.localeCompare(b.lastName,'de')||a.firstName.localeCompare(b.firstName,'de'));
  }
  function paint(){
+  if(root&&allowed()&&requestedMember&&members().some(m=>m.id===requestedMember)){const id=requestedMember;requestedMember='';void editor(id);}
   if(root){root.querySelector('#member-directory-mode')?.setAttribute('aria-pressed',String(!billing));root.querySelector('#member-billing-mode')?.setAttribute('aria-pressed',String(billing));const bankButton=root.querySelector('#member-bank-tools');if(bankButton)bankButton.hidden=!billing;}
   const extraSummary=root?.querySelector('#member-extra-filters>summary');if(extraSummary)extraSummary.textContent='Weitere Filter & Sortierung'+(root.querySelector('#member-bank-status').value!=='all'||root.querySelector('#member-sort').value!=='name'?' · aktiv':'');
   if(!root||!allowed())return;for(const id of selection)if(!members().some(m=>m.id===id))selection.delete(id);const feeLabel=root.querySelector('#annual-fee-amount');if(feeLabel)feeLabel.textContent=euro(annualFee(year));const query=root.querySelector('#registry-search').value;if(query!==lastQuery){selection.clear();lastQuery=query;}const rows=filtered(),all=members().map(current),open=all.filter(c=>['open','returned','review'].includes(c.status)),list=root.querySelector('#registry-list');
