@@ -3,6 +3,7 @@ import {normalizePrices} from './pricing.js';
 import { firebaseConfig, tournamentId, useEmulators, appCheckSiteKey } from './config.js';
 import { runStateTransaction } from './transaction.js';
 import {memberInvitationPlan,memberInvitationSnapshot,defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact,profileValues,normalizeProfileChange} from './registration.js';
+import {bankProfileChanged,profileTime} from './profile-review.js';
 import {contributionReviewSnapshot,contributionFor,validYear,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
 import {cancelRegistrationTeam,resolvePlayerAccount} from './team-transfer.js';
@@ -444,9 +445,9 @@ export async function saveMember(id,input,{expectedUpdatedAt}={}){
 export async function deleteMember(id,{expectedUpdatedAt}={}){
  await requireBoardAccount();if(typeof id!=='string'||!id||id.length>128||id.includes('/'))throw Error('Ungültige Mitglieds-ID.');
  const filter=async(collection,field,value)=>{const s=await api.getDocs(api.query(api.collection(db,collection),api.where(field,'==',value)));return s.docs.map(d=>({path:[collection,d.id],data:d.data()}));};
- const [profiles,changes,persons,events,allMembers]=await Promise.all([filter('memberProfiles','memberId',id),filter('memberProfileChanges','memberId',id),filter('persons','memberId',id),api.getDocs(api.collection(db,'registrationEvents')),listMembers()]);
+ const [profiles,changes,persons,events,allMembers,history]=await Promise.all([filter('memberProfiles','memberId',id),filter('memberProfileChanges','memberId',id),filter('persons','memberId',id),api.getDocs(api.collection(db,'registrationEvents')),listMembers(),filter('memberChangeHistory','memberId',id)]);
  const registrations=(await Promise.all(events.docs.map(async event=>{const s=await api.getDocs(api.collection(db,'tournamentRegistrations',event.id,'entries'));return s.docs.filter(d=>d.data().players?.some(p=>p.memberId===id)).map(d=>({path:['tournamentRegistrations',event.id,'entries',d.id]}));}))).flat();
- const bindings=[...profiles.map(r=>({...r,kind:'private'})),...changes.map(r=>({...r,kind:'private'})),...persons.map(r=>({...r,kind:'person'})),...registrations.map(r=>({...r,kind:'registration'}))];
+ const bindings=[...profiles.map(r=>({...r,kind:'private'})),...changes.map(r=>({...r,kind:'private'})),...history.map(r=>({...r,kind:'private'})),...persons.map(r=>({...r,kind:'person'})),...registrations.map(r=>({...r,kind:'registration'}))];
  if(bindings.length>400)throw Error('Zu viele Verknüpfungen für eine einzelne Löschung. Bitte die Zuordnungen zuerst getrennt bereinigen.');
  return api.runTransaction(db,async tx=>{
   const ref=api.doc(db,'members',id),counterRef=api.doc(db,'mandateCounters','global');
@@ -554,9 +555,18 @@ export async function listProfileChanges(){
  }
  const requests=await api.getDocs(api.collection(db,'memberProfileChanges'));return requests.docs.map(s=>({id:s.id,...s.data()}));
 }
-export async function reviewProfileChange(uid,{status,note='',expectedSubmittedAt}={}){
+export async function listMemberChangeHistory(id){
+ await requireBoardAccount();
+ const read=async name=>{const data=await api.getDocs(api.query(api.collection(db,name),api.where('memberId','==',id)));return data.docs.map(d=>({id:d.id,...d.data()}));};
+ const [history,requests]=await Promise.all([read('memberChangeHistory'),read('memberProfileChanges')]);
+ // Bereits freigegebene ältere Anfragen anzeigen, solange sie noch vorhanden sind.
+ return [...history,...requests.filter(r=>r.status==='accepted'&&!history.some(h=>h.requestUid===r.id&&h.baseRevision===r.baseRevision)).map(r=>({...r,bankReleased:false}))].sort((a,b)=>profileTime(b.reviewedAt)-profileTime(a.reviewedAt));
+}
+export async function reviewProfileChange(uid,{status,note='',expectedSubmittedAt,bankReviewConfirmed=false,expectedUpdatedAt}={}){
  await requireBoardAccount();if(!['accepted','rejected'].includes(status))throw Error('Ungültige Entscheidung.');
  if(status==='rejected'&&!note.trim())throw Error('Bitte die Ablehnung kurz begründen.');
+ if(bankReviewConfirmed&&(status!=='accepted'||expectedUpdatedAt===undefined))throw Error('Bitte die neue Bankverbindung anhand des aktuellen Mitgliedseintrags ausdrücklich prüfen.');
+ const historyId=crypto.randomUUID();
  await api.runTransaction(db,async tx=>{
   const ref=api.doc(db,'memberProfileChanges',uid),request=await tx.get(ref),r=request.data();
   if(!r||r.status!=='pending'||expectedSubmittedAt!==undefined&&(r.submittedAt?.toMillis?.()??null)!==expectedSubmittedAt)throw Error('Die Anfrage wurde inzwischen bearbeitet.');
@@ -565,9 +575,15 @@ export async function reviewProfileChange(uid,{status,note='',expectedSubmittedA
    if(!m.exists()||m.data().accountUid!==uid||!p.exists()||p.data().memberId!==r.memberId)throw Error('Die Kontoverknüpfung hat sich geändert. Bitte zuerst prüfen.');
    if(p.data().revision!==r.baseRevision||JSON.stringify(profileValues(m.data()))!==JSON.stringify(profileValues(r.before)))throw Error('Die Stammdaten wurden inzwischen geändert. Bitte die Anfrage ablehnen und eine neue Änderung anfordern.');
    const changes=normalizeProfileChange(r.changes),member={...m.data(),...changes};
-   // Eine neue IBAN hebt eine bestehende Rücklastschrift-Sperre nicht selbstständig auf.
-   tx.update(mRef,{...changes,updatedAt:api.serverTimestamp()});
+   if(bankReviewConfirmed){
+    if(!bankProfileChanged(r.before,changes)||!changes.iban)throw Error('Die Freigabe benötigt eine geänderte Bankverbindung mit gültiger IBAN.');
+    if((profileTime(m.data().updatedAt)||null)!==expectedUpdatedAt)throw Error('Der Mitgliedseintrag oder Bankhinweis wurde inzwischen geändert. Bitte neu laden und prüfen.');
+    member.bankStatus='ok';member.bankReviewedAt=api.serverTimestamp();member.bankNote='';
+   }
+   // Ohne ausdrücklichen Haken bleiben Sperre und frühere Rücklastschrift-Hinweise erhalten.
+   tx.update(mRef,{...changes,...(bankReviewConfirmed?{bankStatus:'ok',bankReviewedAt:api.serverTimestamp(),bankNote:''}:{}),updatedAt:api.serverTimestamp()});
    tx.set(pRef,{...memberProfile({id:r.memberId,...member},p.data().revision+1),updatedAt:api.serverTimestamp()});
+   tx.set(api.doc(db,'memberChangeHistory',historyId),{memberId:r.memberId,requestUid:uid,baseRevision:r.baseRevision,before:profileValues(r.before),changes,bankReleased:!!bankReviewConfirmed,...(bankReviewConfirmed?{bankNoteBefore:String(m.data().bankNote??'')}:{}),reviewedBy:auth.currentUser.uid,reviewedAt:api.serverTimestamp()});
   }
   tx.update(ref,{status,note:note.trim().slice(0,1000),reviewedBy:auth.currentUser.uid,reviewedAt:api.serverTimestamp()});
  });
