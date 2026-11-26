@@ -7,11 +7,13 @@ import {contributionReviewSnapshot,contributionFor,validYear,normalizeContributi
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
 import {cancelRegistrationTeam,resolvePlayerAccount} from './team-transfer.js';
 import {boardInvitationIssues,boardRegistrationNotifications,cancellationPaymentReview} from './board-alerts.js';
+import {createDebitWorkflowStore} from './debit-workflow-store.js';
 
 export const firebaseProjectId=firebaseConfig.projectId;
 export const configured = firebaseConfig.apiKey !== 'HIER_EINTRAGEN' && firebaseConfig.projectId !== 'DEIN-PROJEKT';
 export const liveCacheKey = `beerpong-live-${firebaseConfig.projectId}`;
 let api, authApi, apps, db, auth, secondary, ref,demoGateOnly=false;
+export const {prepareDebitRun,resumeDebitRun,cancelDebitRun,confirmScheduledDebit,listDebitRunItems,listDebitSettlements,startDebitSettlement,resumeDebitSettlement}=createDebitWorkflowStore(()=>({api,db,auth,requireBoardAccount}));
 export let historyApproved=false;
 let stopState=()=>{},stateCallbacks,stateGeneration=0;
 export const {transferRegistration,rebuildRegistrationClaims,reconcileExistingTeamPeople,listPersons,listPublicPlayers,savePublicPlayer,savePerson,linkMemberPerson,syncMemberParticipationAccount,listParticipations,listOwnParticipations,linkParticipationAccount,watchMyTeam,importHistoricalLineups,correctContributionPayment,listContributionTransactions,listBankReturnRisks,listDebitExports,recordDebitExport,setDebitExportStatus,getMembershipPDF,migrateMembershipPDFs,watchClubSettings,saveClubSettings}=createClubStore(()=>({api,db,auth,requireBoardAccount,liveOnly,linkMemberAccount}));
@@ -404,7 +406,7 @@ export async function saveContribution(memberId,year,input,expectedRevision){
 /** Genau eine bestätigte Buchung; derselbe CSV-Umsatz wird auch bei erneuter Datei nicht doppelt gezählt. */
 export async function recordContributionPayment(memberId,year,row,kind){
  await requireBoardAccount();if(!/^[a-f0-9]{64}$/.test(row.id))throw Error('Ungültige Buchungskennung.');const ref=contributionRef(memberId,year),receipt=api.doc(db,'contributionTransactions',row.id);
- return api.runTransaction(db,async tx=>{const [member,old,previous]=await Promise.all([tx.get(api.doc(db,'members',memberId)),tx.get(ref),tx.get(receipt)]);if(previous.exists())return{duplicate:true};if(!member.exists())throw Error('Mitglied nicht mehr vorhanden.');
+ return api.runTransaction(db,async tx=>{const [member,old,previous,workflow]=await Promise.all([tx.get(api.doc(db,'members',memberId)),tx.get(ref),tx.get(receipt),tx.get(api.doc(db,'debitSettlements',row.id))]);if(previous.exists()||workflow.exists())return{duplicate:true};if(!member.exists())throw Error('Mitglied nicht mehr vorhanden.');
   const current=old.exists()?old.data():legacyContribution({id:memberId,...member.data()},year),next=applyBankPayment(current,row,kind);
   tx.set(ref,{...next,memberId,year:String(year),revision:(old.data()?.revision??-1)+1,updatedBy:auth.currentUser.uid,updatedAt:api.serverTimestamp()});
   if(kind==='return')tx.update(api.doc(db,'members',memberId),{bankStatus:'unclear',bankNote:'Rücklastschrift vom '+row.date+' · Bankverbindung vor weiterem Einzug prüfen.',updatedAt:api.serverTimestamp()});

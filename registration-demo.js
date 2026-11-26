@@ -6,6 +6,7 @@ import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
 import {cancelRegistrationTeam} from './team-transfer.js';
 import {memberInvitationPlan} from './registration.js';
 import {boardInvitationIssues,cancellationPaymentReview} from './board-alerts.js';
+import {createMemoryDebitWorkflow} from './debit-workflow-store.js';
 export function createDemoRegistry({getTournamentState=()=>null,saveTournamentState=()=>{}}={}){
  const invitationAccounts=new Map(),invitationLogs=new Map();
  const contributions=new Map(),transactions=new Map(),listeners=new Set(),persons=new Map(),publicPlayers=new Map(),participations=new Map(),corrections=new Map(),debitExports=new Map();let clubSettings={};let sportArchives=[];
@@ -16,6 +17,7 @@ export function createDemoRegistry({getTournamentState=()=>null,saveTournamentSt
  members.set('example-2',{id:'example-2',...normalizeMember({number:'D02',firstName:'Kim',lastName:'Muster',email:'kim@example.test',active:false})});
  const copy=x=>structuredClone(x);
  const api={
+  ...createMemoryDebitWorkflow({members,contributions,exports:debitExports,transactions,changed:()=>listeners.forEach(fn=>fn())}),
   reconcileExistingTeamPeople:async id=>{let count=0;for(const row of await api.listRegistrations(id))if(row.teamId&&row.status==='confirmed'){for(const [i,p]of row.players.entries()){const personId=p.personId||'demo-'+row.id+'-'+i;persons.set(personId,{id:personId,firstName:p.firstName,lastName:p.lastName,email:p.email,memberId:p.memberId??'',accountUid:'',aliases:[]});participations.set(id+'__'+row.teamId+'__'+(i+1),{personId,firstName:p.firstName,lastName:p.lastName,tournamentId:id,teamId:row.teamId,teamName:row.teamName,year:'2027',date:'2027-01-02',slot:i+1,edition:15,source:'registration',accountUid:''});}count++;}return{teams:count,linked:0,unmatched:count*2};},
   rebuildRegistrationClaims:async id=>({emails:new Set((await api.listRegistrations(id)).filter(r=>r.status!=='cancelled').flatMap(r=>r.players.map(p=>p.email)).filter(Boolean)).size,duplicates:0}),
   listSportArchives:async()=>copy(sportArchives),
@@ -89,7 +91,7 @@ export function createDemoRegistry({getTournamentState=()=>null,saveTournamentSt
   },
   watchContributions:async(year,callback)=>{const fn=()=>callback(copy([...contributions.values()].filter(r=>r.year===String(year))));listeners.add(fn);fn();return()=>listeners.delete(fn);},
   saveContribution:async(memberId,year,input,revision)=>{const key=year+'/'+memberId,old=contributions.get(key);if((old?.revision??-1)!==revision)throw Error('Der Beitrag wurde inzwischen geändert.');contributions.set(key,{...normalizeContribution(input),memberId,year:String(year),revision:revision+1});listeners.forEach(fn=>fn());},
-  recordContributionPayment:async(memberId,year,row,kind)=>{if(transactions.has(row.id))return{duplicate:true};const key=year+'/'+memberId,current=contributions.get(key)??legacyContribution(members.get(memberId),year),next=applyBankPayment(current,row,kind);contributions.set(key,{...next,memberId,year:String(year),revision:current.revision+1});transactions.set(row.id,{...copy(row),memberId,year:String(year),kind,paidDelta:next.paidCents-current.paidCents,createdAt:Date.now()});if(kind==='return'){Object.assign(members.get(memberId),{bankStatus:'unclear',bankNote:'Rücklastschrift vom '+row.date+' · Bankverbindung prüfen.'});}listeners.forEach(fn=>fn());return{duplicate:false};},
+  recordContributionPayment:async(memberId,year,row,kind)=>{if(transactions.has(row.id)||(await api.listDebitSettlements()).some(s=>s.id===row.id))return{duplicate:true};const key=year+'/'+memberId,current=contributions.get(key)??legacyContribution(members.get(memberId),year),next=applyBankPayment(current,row,kind);contributions.set(key,{...next,memberId,year:String(year),revision:current.revision+1});transactions.set(row.id,{...copy(row),memberId,year:String(year),kind,paidDelta:next.paidCents-current.paidCents,createdAt:Date.now()});if(kind==='return'){Object.assign(members.get(memberId),{bankStatus:'unclear',bankNote:'Rücklastschrift vom '+row.date+' · Bankverbindung prüfen.'});}listeners.forEach(fn=>fn());return{duplicate:false};},
   listBankReturnRisks:async()=>copy([...transactions.values()].filter(r=>r.kind==='return'&&!corrections.has(r.id)).map(r=>({memberId:r.memberId,date:r.date,createdAt:r.createdAt}))),
   listContributionTransactions:async memberId=>copy([...transactions.entries()].filter(([,r])=>r.memberId===memberId).map(([id,r])=>({...r,id,correction:corrections.get(id)??null}))),
   listMemberships:async()=>copy(applications),

@@ -44,7 +44,7 @@ export function prepareCombinedDebitExport({members,byYear={},from,to,purpose=DE
   for(let y=+from;y<=+to;y++){
    const year=String(y),c=contributionFor(m,year,byYear[year]??[]),amount=c.dueCents-c.paidCents;states.push([m.id,year,c.revision??-1,c.status,c.dueCents,c.paidCents,m.bankStatus]);
    if(beforeEntryYear(m.joined,year)||['paid','waived','notdue'].includes(c.status)||amount<=0)continue;
-   if(c.status==='pending'){errors.push(year+': Einzug bereits vorgemerkt; vor einem weiteren Einzug prüfen.');continue;}
+   if(['pending','scheduled'].includes(c.status))continue;
    const report=prepareDebitExport({members:[m],entries:[c],year,purpose:DEFAULT_DEBIT_PURPOSE,includeFormer});
    if(report.issues.length)errors.push(...report.issues.flatMap(i=>i.errors.map(s=>year+': '+s)));
    annual.push(...report.rows.map(r=>({...r,year})));
@@ -59,7 +59,7 @@ export function prepareCombinedDebitExport({members,byYear={},from,to,purpose=DE
  const duplicates=new Set([...mandates.values()].filter(ids=>ids.length>1).flat());
  const valid=rows.filter(r=>{if(!duplicates.has(r.memberId))return true;issues.push({id:r.memberId,name:r.memberName,errors:['Mandatsreferenz ist bei mehreren Mitgliedern in der Auswahl vergeben.']});return false;});
  const lines=[SPARKASSE_COLUMNS.join(';'),...valid.map(r=>['SEPA',r.name,'',r.iban,'','',reviewDebitAmount(r.amountCents),r.purpose,r.mandate,dateDE(r.mandateDate)].map(csvCell).join(';'))],csv='\uFEFF'+lines.join('\r\n')+'\r\n';
- return{year:String(to),from:String(from),to:String(to),purpose:combinedDebitPurpose(purpose,[to]).replace(new RegExp(' '+to+'$'),''),rows:valid,issues,skipped,totalCents:valid.reduce((sum,r)=>sum+r.amountCents,0),csv,filename:'Sparkasse_Nachholeinzug_'+from+'-'+to+'.csv',signature:JSON.stringify({csv,issues,skipped,states,includeFormer})};
+ return{year:String(to),from:String(from),to:String(to),includeFormer,purpose:combinedDebitPurpose(purpose,[to]).replace(new RegExp(' '+to+'$'),''),rows:valid,issues,skipped,totalCents:valid.reduce((sum,r)=>sum+r.amountCents,0),csv,filename:'Sparkasse_Lastschriften_'+from+'-'+to+'.csv',signature:JSON.stringify({csv,issues,skipped,states,includeFormer})};
 }
 const reviewDebitAmount=cents=>(cents/100).toFixed(2).replace('.',',');
 export function debitExportYears(record){return[...new Set(record.items.flatMap(item=>item.years??[record.year]))].sort();}
@@ -71,7 +71,7 @@ export function prepareDebitExport({members,entries=[],year,purpose=DEFAULT_DEBI
  const chosen=selectedIds?new Set(selectedIds):null;
  for(const m of members){
   if(chosen&&!chosen.has(m.id))continue;const c=contributionFor(m,year,entries),amount=c.dueCents-c.paidCents;
-  if(beforeEntryYear(m.joined,year)||!m.active&&!includeFormer||['paid','waived','notdue'].includes(c.status)||amount<=0){skipped.push({id:m.id,name:fullName(m),reason:beforeEntryYear(m.joined,year)?'Beitragsjahr liegt vor dem Eintrittsjahr':!m.active?'Ehemaliges Mitglied':'Beitrag erledigt oder nicht fällig'});continue;}
+  if(beforeEntryYear(m.joined,year)||!m.active&&!includeFormer||['paid','waived','notdue','pending','scheduled'].includes(c.status)||amount<=0){skipped.push({id:m.id,name:fullName(m),reason:beforeEntryYear(m.joined,year)?'Beitragsjahr liegt vor dem Eintrittsjahr':!m.active?'Ehemaliges Mitglied':'Beitrag erledigt, nicht fällig oder bereits im Einzug'});continue;}
   const errors=[],name=String(m.accountHolder||fullName(m)).trim(),iban=String(m.iban??'').replace(/\s+/g,'').toUpperCase(),mandate=String(m.mandate??'').trim(),date=joinedDate(m.joined);
   if(m.bankStatus==='unclear')errors.push('IBAN / Bankverbindung unklar: Export für alle Beitragsjahre gesperrt, bis der Vorstand die Bankverbindung geprüft und freigegeben hat.');
   if(!name||name.length>70||/[\r\n\x00-\x1f]/.test(name)||/^[=+@-]/.test(name))errors.push('Kontoinhaber fehlt oder ist nicht als Bankname verwendbar (maximal 70 Zeichen).');
@@ -88,5 +88,5 @@ export function prepareDebitExport({members,entries=[],year,purpose=DEFAULT_DEBI
  const duplicates=new Set(issues.filter(i=>i.errors.some(s=>s.includes('doppelt'))).map(i=>String(members.find(m=>m.id===i.id)?.mandate??'').trim()));
  const valid=rows.filter(r=>{if(!duplicates.has(r.mandate))return true;issues.push({id:r.memberId,name:r.memberName,errors:['Mandatsreferenz ist in der Auswahl doppelt.']});return false;});
  const lines=[SPARKASSE_COLUMNS.join(';'),...valid.map(r=>['SEPA',r.name,'',r.iban,'','',(r.amountCents/100).toFixed(2).replace('.',','),r.purpose,r.mandate,dateDE(r.mandateDate)].map(csvCell).join(';'))];
- return{year:String(year),purpose:finalPurpose,rows:valid,issues,skipped,totalCents:valid.reduce((n,r)=>n+r.amountCents,0),csv:'\uFEFF'+lines.join('\r\n')+'\r\n',filename:`Sparkasse_Lastschriftvorlagen_${year}.csv`};
+ return{year:String(year),includeFormer,purpose:finalPurpose,rows:valid,issues,skipped,totalCents:valid.reduce((n,r)=>n+r.amountCents,0),csv:'\uFEFF'+lines.join('\r\n')+'\r\n',filename:`Sparkasse_Lastschriftvorlagen_${year}.csv`};
 }

@@ -3,7 +3,7 @@ import {annualFee} from './pricing.js';
 import {fullName,nameKey} from './registration.js';
 import {validDate,joinedDate,beforeEntryYear} from './dates.js';
 export {validDate} from './dates.js';
-export const contributionStates={open:'Offen',pending:'Einzug vorgemerkt',paid:'Bezahlt',returned:'Rücklastschrift',review:'Prüfen',waived:'Beitragsfrei',notdue:'Nicht fällig'};
+export const contributionStates={open:'Offen',pending:'Für Lastschrift vorgemerkt',scheduled:'Auf Lastschrift wartend',paid:'Bezahlt',returned:'Rücklastschrift',review:'Prüfen',waived:'Beitragsfrei',notdue:'Nicht fällig'};
 export const contributionMethods={manual:'Manuell',debit:'Lastschrift',transfer:'Überweisung',cash:'Bar',excel:'Excel-Übernahme'};
 export const validYear=year=>/^20\d{2}$/.test(String(year));
 export const currentFeeYear=()=>String(new Date().getFullYear());
@@ -33,7 +33,7 @@ export function historicalContributionSummary(members,byYear,beforeYear){
    const year=String(y),entries=byYear[year]??[],documented=entries.some(c=>c.memberId===member.id)||Object.hasOwn(member.feeHistory??{},year)||Object.hasOwn(member.feeColors??{},year);
    if(!joined&&!documented)continue;
    const c=contributionFor(member,year,entries),remainingCents=Math.max(0,c.dueCents-c.paidCents);
-   if(remainingCents>0&&['open','returned','review','pending'].includes(c.status))years.push({year,status:c.status,remainingCents});
+   if(remainingCents>0&&['open','returned','review','pending','scheduled'].includes(c.status))years.push({year,status:c.status,remainingCents});
   }
   if(years.length)rows.push({memberId:member.id,name:fullName(member),active:!!member.active,years,amountCents:years.reduce((n,c)=>n+c.remainingCents,0)});
  }
@@ -51,7 +51,7 @@ export function contributionPaymentDraft(input,mode='auto'){
  const {dueCents,paidCents}=input;let status;
  if(dueCents===0&&paidCents===0)status=mode==='notdue'?'notdue':'waived';
  else if(dueCents>0&&paidCents>=dueCents)status='paid';
- else status=['pending','returned','review'].includes(mode)?mode:'open';
+ else status=['pending','scheduled','returned','review'].includes(mode)?mode:'open';
  return normalizeContribution({...input,status});
 }
 export const REVIEW_COLUMNS=['Format','Mitglied-ID','Mitgliedsnummer','Vorname','Nachname','Beitragsjahr','Status bisher','Soll EUR','Bezahlt bisher EUR','Offen EUR','Excel-Original','Excel-Farbe','Neuer Status','Bezahlt EUR','Zahlungsdatum','Zahlungsart','Neue Notiz','Pruefstand'];
@@ -87,14 +87,14 @@ export function readContributionReview(text){
    identity={memberId:m.id,year:v[5],name:m.firstName+' '+m.lastName};
    const originals=reviewOriginal(m,{...before,year:v[5],value:v[10],color:v[11]});
    for(let i=0;i<12;i++){
-    const expected=String(originals[i]??'');if(v[i]===expected)continue;
+    const expected=String(originals[i]??'');if(v[i]===expected||i===6&&before.status==='pending'&&v[i]==='Einzug vorgemerkt')continue;
     if([7,8,9].includes(i)&&amountCents(v[i])!==null&&amountCents(v[i])===amountCents(expected))continue;
     if(i===2&&/^\d+(?:[.,]0+)?$/.test(v[i])&&/^\d+(?:[.,]0+)?$/.test(expected)&&Number(v[i].replace(',','.'))===Number(expected.replace(',','.')))continue;
     const editable=i===6?'Neuer Status':i===8?'Bezahlt EUR':'';
     throw Error('Die Originalspalte „'+REVIEW_COLUMNS[i]+'“ wurde inhaltlich geändert.'+(editable?' Bitte die Änderung unter „'+editable+'“ eintragen.':' Bitte diese Spalte unverändert lassen.'));
    }
    const action=v[12].trim(),edits=v.slice(13,17).some(s=>s.trim());if(!action&&!edits)return{line,memberId:v[1],year:v[5],skip:true};
-   const status=Object.keys(contributionStates).find(k=>nameKey(k)===nameKey(action)||nameKey(contributionStates[k])===nameKey(action));if(!status)throw Error('Neuer Status: Bezahlt, Offen, Prüfen, Rücklastschrift, Einzug vorgemerkt, Beitragsfrei oder Nicht fällig eintragen.');
+   const status=nameKey(action)===nameKey('Einzug vorgemerkt')?'pending':Object.keys(contributionStates).find(k=>nameKey(k)===nameKey(action)||nameKey(contributionStates[k])===nameKey(action));if(!status)throw Error('Neuer Status: Bezahlt, Offen, Prüfen, Rücklastschrift, Für Lastschrift vorgemerkt, Auf Lastschrift wartend, Beitragsfrei oder Nicht fällig eintragen.');
    const zero=['waived','notdue'].includes(status),paid=v[13].trim()?amountCents(v[13]):zero?0:status==='paid'?Math.max(before.dueCents,before.paidCents):before.paidCents;
    if(paid===null)throw Error('Bezahlt EUR ist kein gültiger Betrag.');
    const date=v[14].trim()?bankDate(v[14]):before.date;if(date===null)throw Error('Zahlungsdatum nicht erkannt.');
@@ -118,7 +118,7 @@ export function normalizeContribution(input){
  if(!Number.isInteger(dueCents)||dueCents<0||dueCents>100000||!Number.isInteger(paidCents)||paidCents<0||paidCents>100000||!Object.hasOwn(contributionStates,status)||!Object.hasOwn(contributionMethods,method))throw Error('Beitragsdaten sind ungültig.');
  if(status==='paid'&&(dueCents<=0||paidCents<dueCents))throw Error('Für „Bezahlt“ muss mindestens der Jahresbeitrag erfasst sein.');
  if(['waived','notdue'].includes(status)&&(dueCents!==0||paidCents!==0))throw Error('Bei beitragsfrei oder nicht fällig müssen Soll und Zahlung 0 € sein.');
- if(['open','pending','returned','review'].includes(status)&&(dueCents<=0||paidCents>=dueCents))throw Error('Offene Beiträge benötigen ein positives Rest-Soll.');
+ if(['open','pending','scheduled','returned','review'].includes(status)&&(dueCents<=0||paidCents>=dueCents))throw Error('Offene Beiträge benötigen ein positives Rest-Soll.');
  if(date&&!validDate(date))throw Error('Bitte ein gültiges Buchungsdatum eingeben.');
  return{dueCents,paidCents,status,method,date,note:String(input.note??'').trim().slice(0,1000)};
 }

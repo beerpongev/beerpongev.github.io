@@ -1,0 +1,5 @@
+Mozilla PDF.js 6.5.438
+Source: https://github.com/mozilla/pdf.js/releases/tag/v6.5.438
+Official npm package: https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-6.5.438.tgz
+Integrity: sha512-vg8Pw1x+AFKy4AMDvhuWl5cOYV8d698UoEANoFFhc79hqXDnZQqnOXoxw3HG907WHOg1JYOvLhP756boddFxpA==
+Legacy ESM build, Apache-2.0, text extraction in a local worker.
