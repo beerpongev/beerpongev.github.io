@@ -49,6 +49,11 @@ export function normalizeContact(data){
  need(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email),'Bitte eine gültige Kontakt-E-Mail eingeben.');need(values.phone,'Bitte eine Telefonnummer eingeben.');return values;
 }
 export const profileFields=['firstName','lastName','birthDate',...contactFields,'iban','bank','accountHolder'];
+/** Mitgliedschaft folgt ausschließlich der bestätigten Konto-Verknüpfung, niemals Rolle oder gleicher E-Mail. */
+export function withAccountMemberships(accounts,members,loadState='ready'){
+ const linked=new Map();for(const m of members)if(m.accountUid){if(!linked.has(m.accountUid))linked.set(m.accountUid,[]);linked.get(m.accountUid).push(m);}
+ return accounts.map(account=>{const matches=linked.get(account.uid)??[],membershipStatus=loadState!=='ready'?loadState:matches.length>1?'ambiguous':matches.length===1?(matches[0].active?'active':'former'):'unlinked';return{...account,membershipStatus,membershipId:loadState==='ready'&&matches.length===1?matches[0].id:''};});
+}
 export function profileValues(data){return Object.fromEntries(profileFields.map(k=>[k,String(data[k]??'')]));}
 export function normalizeProfileChange(data){
  const member=normalizeMember(data),values={...profileValues(member),...normalizeContact(data)};

@@ -2,7 +2,7 @@ import {createClubStore} from './club-store.js';
 import {normalizePrices} from './pricing.js';
 import { firebaseConfig, tournamentId, useEmulators, appCheckSiteKey } from './config.js';
 import { runStateTransaction } from './transaction.js';
-import {memberInvitationPlan,memberInvitationSnapshot,defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact,profileValues,normalizeProfileChange} from './registration.js';
+import {memberInvitationPlan,memberInvitationSnapshot,defaultRegistrationSettings,normalizeRegistration,normalizeMember,reconcileSettings,validatePrivateImport,normalizeApplication,applicationMember,memberProfile,normalizeContact,profileValues,normalizeProfileChange,withAccountMemberships} from './registration.js';
 import {bankProfileChanged,profileTime} from './profile-review.js';
 import {contributionReviewSnapshot,contributionFor,validYear,normalizeContribution,legacyContribution,applyBankPayment} from './contributions.js';
 import {mandateYear,mandateSequence,nextMandate} from './debit-export.js';
@@ -64,10 +64,12 @@ export async function connect({ onState, onUser, onRole, onUsers, onConnection, 
       onRole(role,snap.data()?.teamId??'',snap.data()?.tournamentId??tournamentId); stopUsers();onUsers([]);onAccessPending?.(false);
       if(!demoGate&&historyApproved&&user.isAnonymous===false&&!userLoginRecorded){userLoginRecorded=true;void recordOwnAppLogin().then(recordOwnAppVisit).catch(onError);}
       if (!demoGate&&role==='board'){
-       let directory=[],activity=new Map();const emit=()=>onUsers(directory.map(u=>({...u,lastAppLoginAt:activity.get(u.uid)?.lastLoginAt??null,lastAppSeenAt:activity.get(u.uid)?.lastSeenAt??null})));
-       const stopDirectory=api.onSnapshot(api.collection(db,'roles'),list=>{directory=list.docs.map(d=>({uid:d.id,...d.data()}));emit();},onError);
-       const stopActivity=api.onSnapshot(api.collection(db,'accountActivity'),list=>{activity=new Map(list.docs.map(d=>[d.id,d.data()]));emit();},onError);
-       stopUsers=()=>{stopDirectory();stopActivity();};
+       let directory=[],members=[],membershipState='loading',activity=new Map(),watching=true;
+       const emit=()=>{if(watching)onUsers(withAccountMemberships(directory,members,membershipState).map(u=>({...u,lastAppLoginAt:activity.get(u.uid)?.lastLoginAt??null,lastAppSeenAt:activity.get(u.uid)?.lastSeenAt??null})));};
+       const stopDirectory=api.onSnapshot(api.collection(db,'roles'),list=>{if(!watching)return;directory=list.docs.map(d=>({uid:d.id,...d.data()}));emit();},onError);
+       const stopActivity=api.onSnapshot(api.collection(db,'accountActivity'),list=>{if(!watching)return;activity=new Map(list.docs.map(d=>[d.id,d.data()]));emit();},onError);
+       const stopMembers=api.onSnapshot(api.collection(db,'members'),list=>{if(!watching)return;members=list.docs.map(d=>({id:d.id,accountUid:d.data().accountUid??'',active:!!d.data().active}));membershipState='ready';emit();},error=>{if(!watching)return;members=[];membershipState='unavailable';emit();onError(error);});
+       stopUsers=()=>{watching=false;stopDirectory();stopActivity();stopMembers();directory=[];members=[];activity.clear();};
       }
     }, error=>{onAccessPending?.(false);onError(error);});
   });
