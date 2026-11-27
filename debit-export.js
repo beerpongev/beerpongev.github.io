@@ -16,6 +16,8 @@ const millis=value=>value?.toMillis?.()??(value?.seconds!==undefined?value.secon
 export function bankRisk(member,returns=[]){
  const reviewed=millis(member.bankReviewedAt);return member.bankStatus==='unclear'||returns.some(r=>r.memberId===member.id&&(!reviewed||millis(r.createdAt)>reviewed));
 }
+/** Die laufende Klärungsaufgabe endet beim Austritt; der Schutz für spätere Altbeitragseinzüge bleibt bestehen. */
+export function bankClarificationNeeded(member,returns=[]){return !!member?.active&&bankRisk(member,returns);}
 export function validIBAN(value){
  const iban=String(value??'').replace(/\s+/g,'').toUpperCase();if(!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)||iban.startsWith('DE')&&iban.length!==22)return false;
  let remainder=0;for(const c of iban.slice(4)+iban.slice(0,4)){const digits=/[A-Z]/.test(c)?String(c.charCodeAt(0)-55):c;for(const n of digits)remainder=(remainder*10+Number(n))%97;}return remainder===1;

@@ -4,6 +4,7 @@ import {contributionFor,historicalContributionSummary,contributionStates} from '
 import {annualFee} from './pricing.js';
 import {mountHistory} from './history.js';
 import {transferOutstanding,cancellationPaymentOutstanding} from './board-alerts.js';
+import {bankClarificationNeeded} from './debit-export.js';
 
 export function legalView(kind,settings={}){
  const legal=settings.legal??{},missing=['address','representatives','registerCourt','registerNumber'].some(k=>!legal[k]);
@@ -36,7 +37,7 @@ export function createClubAdministration(ctx){
      ['registrations','transfer-open',entries.filter(r=>transferOutstanding(r,ctx.state?.())).length,'Teamübernahme offen / prüfen'],
      ['registrations','cancel-payment',entries.filter(cancellationPaymentOutstanding).length,'Zahlung nach Absage prüfen'],
      ['registrations','waitlist',s.waitlistCount&&s.confirmedCount<s.capacity?s.waitlistCount:0,'Freier Platz: Nachrücken bestätigen'],
-     ['members','bank',members.filter(m=>m.bankStatus==='unclear').length,'Bankverbindung klären'],
+     ['members','bank',members.filter(m=>bankClarificationNeeded(m)).length,'Bankverbindung klären'],
      ['members','action',members.filter(m=>m.active&&['open','review','returned'].includes(contributionFor(m,year,contributions).status)).length,`Jahresbeiträge ${year} offen / prüfen`]
     ];
     root.querySelector('#board-tasks').innerHTML=`<div class="board-task-grid">${tasks.map(([view,filter,count,label])=>`<a class="board-task ${count?'has-work':''}" ${view==='applications'?'data-view="applications"':''} href="?bereich=${view==='registrations'?'anmeldungen-verwalten':view==='applications'?'antraege':'mitglieder-verwalten'}&turnier=${encodeURIComponent(ctx.tournamentId())}&filter=${filter}"><b>${count}</b><span>${e(label)}</span></a>`).join('')}<button type="button" class="board-task ${past.count?'has-work':''}" id="board-arrears-toggle" aria-expanded="false" aria-controls="board-arrears"><b>${past.count}</b><span>Beiträge aus Vorjahren offen / prüfen</span></button></div><section id="board-arrears" class="board-arrears" hidden><h4>Offene Beiträge aus Vorjahren</h4><p>${past.count} Jahresbeiträge · ${past.memberCount} ${past.memberCount===1?'Person':'Personen'} · ${euro(past.totalCents)} Restbetrag / Prüfbetrag</p><p class="legend">Ein Mitglied mit drei offenen Jahren zählt als drei Beiträge. Teilzahlungen sind abgezogen. Noch vorgemerkte Einzüge und dokumentierte Rückstände ehemaliger Mitglieder sind enthalten. Ohne Eintrittsdatum werden nur belegte Beitragsjahre berücksichtigt.</p><div>${past.rows.map(r=>`<article class="board-arrears-row"><div><a href="?bereich=mitglieder-verwalten&mitglied=${encodeURIComponent(r.memberId)}"><strong>${e(r.name)}</strong> · Beitragskonto öffnen ↗</a>${r.active?'':'<small>Ehemaliges Mitglied</small>'}<p>${r.years.map(c=>e(c.year)+': '+euro(c.remainingCents)+' · '+e(contributionStates[c.status])).join('<br>')}</p></div><strong>${euro(r.amountCents)}</strong></article>`).join('')||'<p>Keine offenen Beiträge aus vergangenen Jahren.</p>'}</div></section><p class="legend">Die Zähler berücksichtigen bestätigte Jahresbuchungen. Details und Prüffilter öffnen den jeweiligen Verwaltungsbereich.</p>`;

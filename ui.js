@@ -1,4 +1,11 @@
 export const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const accountRoles={guest:'Zuschauer',player:'Mitspieler',admin:'Spielleitung',board:'Vorstand'};
+export function accountRoleBadge(role){const known=Object.hasOwn(accountRoles,role);return '<span class="account-role-badge account-role-'+(known?role:'unknown')+'"'+(['board','admin'].includes(role)?' title="Erweiterte Verwaltungsrechte"':'')+'>'+escapeHTML(known?accountRoles[role]:'Unbekannte Rolle')+'</span>';}
+export function accountRoleFilterHTML(selected='all'){return '<label>Konto-Rolle<select id="account-role-filter">'+[['all','Alle Rollen'],['privileged','Vorstand und Spielleitung'],['board','Vorstand'],['admin','Spielleitung'],['player','Mitspieler'],['guest','Zuschauer']].map(([key,label])=>'<option value="'+key+'"'+(key===selected?' selected':'')+'>'+label+'</option>').join('')+'</select></label>';}
+/** Rollenprüfung der Verzeichnisansicht; verändert keine Berechtigungen und bleibt mit Kontostatus/Suche kombinierbar. */
+export function filterAccountDirectory(accounts,{search='',status='all',role='all'}={}){
+ const query=search.trim().toLocaleLowerCase('de');return accounts.filter(u=>(!query||(String(u.name??'')+' '+String(u.email??'')).toLocaleLowerCase('de').includes(query))&&(role==='all'||role==='privileged'&&['board','admin'].includes(u.role)||u.role===role)&&(status==='all'||status==='unknown'&&!u.disabled&&!u.lastAppLoginAt||status==='logged'&&u.lastAppLoginAt>0||status==='no-team'&&u.role==='player'&&!u.teamId||status==='disabled'&&u.disabled)).sort((a,b)=>String(a.name).localeCompare(String(b.name),'de'));
+}
 export const localDate = (date=new Date()) => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 export const formatAppLogin=seconds=>Number.isSafeInteger(seconds)&&seconds>0?new Date(seconds*1000).toLocaleString('de-DE',{timeZone:'Europe/Berlin',dateStyle:'short',timeStyle:'short'}):'Noch nicht erfasst';
 export function accountUsageStats(accounts,now=Date.now()){
